@@ -1,6 +1,7 @@
 
 BIN = deque
-CC = gcc
+OBIN = size_check segv_check
+CC = g++
 CCFLAGS = -c
 LDFLAGS = 
 CSRCS = $(BIN).c
@@ -13,7 +14,7 @@ $(BIN): $(OBJS)
 	$(CC) $(LDFLAGS) $(OBJS) -o $(BIN)
 
 $(OBJS): $(CSRCS) $(HSRCS)
-	$(CC) $(CCFLAGS) -c $(CSRCS)
+	$(CC) $(CCFLAGS) $(CSRCS)
 
 clean:
-	-rm $(OBJS) $(BIN) $(DEPS)
+	-rm $(OBJS) $(BIN) $(OBIN) $(DEPS)
