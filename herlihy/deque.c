@@ -2,71 +2,92 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "atomic_ops.h"
-#include "deque.h"
+#include "deque_simple.h"
 
-int left_push(bounded_deque_t *deque, int elt) {
-    // fill in later
-}
-
-double *left_pop(bounded_deque_t *deque) {
-    // fill in later
-
-}
-
-oracle_result_t *left_checked_oracle(bounded_deque_t *deque) {
-    // fill in later
-
-}
-
-int right_push(bounded_deque_t *deque, int elt) {
+void left_push(bounded_deque_t *deque, int elt, int *stat) {
     unsigned long long int k;
-    bounded_deque_node_t previous, current, next;
-    oracle_result_t *result = NULL;
+    bounded_deque_node_t previous, current;
     
     while(1) {
-        result = right_checked_oracle(deque);
-        k = result->k;
-        previous = result->left;
-        current = result->right;
-        next = deque->nodes[k + 1];
-        free(result);
-       
-        // RN -> v 
-        if(next.value == RNULL) {
+        k = oracle(LEFT);
+        previous = deque->nodes[k + 1];
+        current = deque->nodes[k];
+        
+        if(previous.value != LNULL && current.value == LNULL) {
+            if(k <= -1) {
+                *stat = FULL;
+                return;
+            }
+
             bounded_deque_node_t prev_new, cur_new;
             copy_bounded_deque_node(&prev_new, &previous);
             set_bounded_deque_node(&cur_new, &elt, current.count);
-            if(CAS_NODE(&deque->nodes[k - 1], previous, prev_new)) {
+            
+            if(CAS_NODE(&deque->nodes[k + 1], previous, prev_new)) {
                 if(CAS_NODE(&deque->nodes[k], current, cur_new)) {
                     deque->size++;
-                    return OK;
+                    *stat = OK;
+                    return;
                 }
             }
         }
+    }
+}
+
+int *left_pop(bounded_deque_t *deque, int *stat) {
+    unsigned long long int k;
+    bounded_deque_node_t current, next;
+    
+    while(1) {
+        k = oracle(LEFT);
+        current = deque->nodes[k + 1];
+        next = deque->nodes[k];
         
-        // LN -> DN, try again
-        if(next.value == LNULL) {
+        if(current.value != LNULL && next.value == LNULL) {
+            if(current.value == RNULL && ATOMIC_EQL(&deque->nodes[k + 1], current)) {
+                *stat = EMPTY;
+                return *current.value;
+            }
+            
             bounded_deque_node_t cur_new, next_new;
-            set_bounded_deque_node(&cur_new, RNULL, current.count);
-            if(CAS_NODE(&deque->nodes[k], current, cur_new)) {
-                set_bounded_deque_node(&next_new, DNULL, next.count);
-                CAS_NODE(&deque->nodes[k + 1], next, next_new);
+            set_bounded_deque_node(&cur_new, LNULL, current.count);
+            set_bounded_deque_node(&next_new, LNULL, next.count);
+            
+            if(CAS_NODE(&deque->nodes[k], next, next_new)) {
+                if(CAS_NODE(&deque->nodes[k + 1], current, cur_new)) {
+                    deque->size--;
+                    *stat = OK;
+                    return *current.value;
+                }
             }
         }
+    }
+}
+
+void right_push(bounded_deque_t *deque, int elt, int *stat) {
+    unsigned long long int k;
+    bounded_deque_node_t previous, current;
+    
+    while(1) {
+        k = oracle(RIGHT);
+        previous = deque->nodes[k - 1];
+        current = deque->nodes[k];
         
-        // DN -> RN, try again
-        if(next.value == DNULL) {
-            bounded_deque_node_t nextnext = deque->nodes[k + 2];
-            if(!IS_NULL(nextnext.value)) {
-                if(ATOMIC_EQL(&deque->nodes[k - 1], previous))
-                    if(ATOMIC_EQL(&deque->nodes[k], current))
-                        return FULL;
-            } else if(nextnext.value == LNULL) {
-                bounded_deque_node_t next_new, nextnext_new;
-                copy_bounded_deque_node(&nextnext_new, &nextnext);
-                if(CAS_NODE(&deque->nodes[k + 2], nextnext, nextnext_new)) {
-                    set_bounded_deque_node(&next_new, RNULL, next.count);
-                    CAS_NODE(&deque->nodes[k + 1], next, next_new);
+        if(previous.value != RNULL && current.value == RNULL) {
+            if(k >= DEF_BOUNDS + 1) {
+                *stat = FULL;
+                return;
+            }
+
+            bounded_deque_node_t prev_new, cur_new;
+            copy_bounded_deque_node(&prev_new, &previous);
+            set_bounded_deque_node(&cur_new, &elt, current.count);
+            
+            if(CAS_NODE(&deque->nodes[k - 1], previous, prev_new)) {
+                if(CAS_NODE(&deque->nodes[k], current, cur_new)) {
+                    deque->size++;
+                    *stat = OK;
+                    return;
                 }
             }
         }
@@ -76,25 +97,25 @@ int right_push(bounded_deque_t *deque, int elt) {
 int right_pop(bounded_deque_t *deque, int *stat) {
     unsigned long long int k;
     bounded_deque_node_t current, next;
-    oracle_result_t *result = NULL;
     
     while(1) {
-        result = right_checked_oracle(deque);
-        k = result->k;
-        current = result->left;
-        next = result->right;
-        free(result);
+        k = oracle(RIGHT);
+        current = deque->nodes[k - 1];
+        next = deque->nodes[k];
         
-        // empty check
-        if((current.value == LNULL || current.value == DNULL) && ATOMIC_EQL(&deque->nodes[k - 1], current)) {
-            *stat = EMPTY;
-            return *current.value;
-        } else {
+        if(current.value != RNULL && next.value == RNULL) {
+            if(current.value == LNULL && ATOMIC_EQL(&deque->nodes[k - 1], current)) {
+                *stat = EMPTY;
+                return *current.value;
+            }
+            
             bounded_deque_node_t cur_new, next_new;
-            set_bounded_deque_node(&current, (int *) RNULL, current.count);
-            set_bounded_deque_node(&next, (int *) RNULL, next.count);
+            set_bounded_deque_node(&cur_new, RNULL, current.count);
+            set_bounded_deque_node(&next_new, RNULL, next.count);
+            
             if(CAS_NODE(&deque->nodes[k], next, next_new)) {
                 if(CAS_NODE(&deque->nodes[k - 1], current, cur_new)) {
+                    deque->size--;
                     *stat = OK;
                     return *current.value;
                 }
@@ -103,40 +124,14 @@ int right_pop(bounded_deque_t *deque, int *stat) {
     }
 }
 
-oracle_result_t *right_checked_oracle(bounded_deque_t *deque) {
-    unsigned long long int k;
-    bounded_deque_node_t left, right;
-    oracle_result_t *result = (oracle_result_t *) malloc(sizeof(oracle_result_t));
-    
-    while(1) {
-        k = oracle(RIGHT); 
-        left = deque->nodes[k - 1];
-        right = deque->nodes[k];
-        if(right.value == RNULL && left.value != RNULL) {
-            result->k = k;
-            result->left = left;
-            result->right = right;
-            return result;
-        }
-        if(right.value == DNULL && left.value != RNULL && left.value != DNULL) {
-            bounded_deque_node_t left_new, right_new;
-            copy_bounded_deque_node(&left_new, &left);
-            set_bounded_deque_node(&right_new, RNULL, right.count);
-            if(CAS_NODE(&deque->nodes[k - 1], left, left_new)) {
-                if(CAS_NODE(&deque->nodes[k], right, right_new)) {
-                    result->k = k;
-                    result->left = left;
-                    result->right = right;
-                    return result;
-                }
-            }
-        }
-    }
-}
-
 unsigned long long int oracle(oracle_ends end) {
-    // fill in later
-    
+    if(end == LEFT) {
+
+    } else if(end == RIGHT) {
+
+    } else {
+        
+    }
 }
 
 void init_bounded_deque_node(bounded_deque_node_t *node) {
@@ -150,9 +145,7 @@ void init_bounded_deque(bounded_deque_t *deque) {
     deque->size = 0;
     for(i = 0; i < DEF_BOUNDS; i++) {
         init_bounded_deque_node(&deque->nodes[i]);
-        if(i == 0)
-            deque->nodes[i].value = DNULL;
-        else if(i < DEF_BOUNDS / 2)
+        if(i < DEF_BOUNDS / 2)
             deque->nodes[i].value = LNULL;
         else 
             deque->nodes[i].value = RNULL;
@@ -212,6 +205,5 @@ void copy_bounded_deque_node(bounded_deque_node_t *old_node, bounded_deque_node_
 }
 
 int main(int argc, char *argv[]) {
-    printf("LNULL: %d, RNULL: %d, DNULL: %d\n", LNULL, RNULL, DNULL);
-    return 0;
+
 }
