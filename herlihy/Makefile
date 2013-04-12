@@ -1,6 +1,6 @@
 
 BIN = deque
-SBIN = deque_simple
+SBIN = deque_circ
 OBIN = size_check segv_check
 CC = g++
 CCFLAGS = -c

@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "atomic_ops.h"
-#include "deque.h"
+#include "deque_circ.h"
 
 int left_push(bounded_deque_t *deque, int elt) {
     // fill in later
