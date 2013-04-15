@@ -1,20 +1,28 @@
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "atomic_ops.h"
-#include "deque.h"
+#include "deque_circ.h"
+
+/*
+ * TODOs and stuff
+ * ---------------
+ *  - do the left/right hints really need to be atomic?
+ *  - what needs to be atomic?
+ *  - is my EQL_NODE macro legit?
+ */
 
 void left_push(bounded_deque_t *deque, int elt, int *stat) {
-    unsigned long long int k;
+    atomic_ulong k;
     bounded_deque_node_t previous, current;
     
     while(1) {
-        k = oracle(LEFT);
+        k = deque->left_hint;
         previous = deque->nodes[k + 1];
         current = deque->nodes[k];
         
         if(previous.value != LNULL && current.value == LNULL) {
-            if(k <= -1) {
+            if(k <= 0) {
                 *stat = FULL;
                 return;
             }
@@ -23,9 +31,10 @@ void left_push(bounded_deque_t *deque, int elt, int *stat) {
             copy_bounded_deque_node(&prev_new, &previous);
             set_bounded_deque_node(&cur_new, &elt, current.count);
             
-            if(CAS_NODE(&deque->nodes[k + 1], previous, prev_new)) {
-                if(CAS_NODE(&deque->nodes[k], current, cur_new)) {
-                    deque->size++;
+            if(CAS_NODE(&deque->nodes[k + 1], &previous, prev_new)) {
+                if(CAS_NODE(&deque->nodes[k], &current, cur_new)) {
+                    // update loc hint
+                    atomic_fetch_add(&deque->left_hint, -1);
                     *stat = OK;
                     return;
                 }
@@ -34,17 +43,18 @@ void left_push(bounded_deque_t *deque, int elt, int *stat) {
     }
 }
 
-int *left_pop(bounded_deque_t *deque, int *stat) {
-    unsigned long long int k;
+int left_pop(bounded_deque_t *deque, int *stat) {
+    atomic_ulong k;
     bounded_deque_node_t current, next;
+    int ret_val;
     
     while(1) {
-        k = oracle(LEFT);
+        k = deque->left_hint;
         current = deque->nodes[k + 1];
         next = deque->nodes[k];
         
         if(current.value != LNULL && next.value == LNULL) {
-            if(current.value == RNULL && ATOMIC_EQL(&deque->nodes[k + 1], current)) {
+            if(current.value == RNULL && EQL_NODE(deque->nodes[k + 1], current)) {
                 *stat = EMPTY;
                 return *current.value;
             }
@@ -55,9 +65,14 @@ int *left_pop(bounded_deque_t *deque, int *stat) {
             
             if(CAS_NODE(&deque->nodes[k], next, next_new)) {
                 if(CAS_NODE(&deque->nodes[k + 1], current, cur_new)) {
-                    deque->size--;
+                    // update loc hint
+                    atomic_fetch_add(&deque->left_hint, 1);
+                    // FREE OLD INT
+                    ret_val = *current.value;
+                    if(!IS_NULL(current.value))
+                        free(current.value);
                     *stat = OK;
-                    return *current.value;
+                    return ret_val;
                 }
             }
         }
@@ -69,12 +84,12 @@ void right_push(bounded_deque_t *deque, int elt, int *stat) {
     bounded_deque_node_t previous, current;
     
     while(1) {
-        k = oracle(RIGHT);
+        k = deque->right_hint;
         previous = deque->nodes[k - 1];
         current = deque->nodes[k];
         
         if(previous.value != RNULL && current.value == RNULL) {
-            if(k >= DEF_BOUNDS + 1) {
+            if(k >= DEF_BOUNDS) {
                 *stat = FULL;
                 return;
             }
@@ -85,7 +100,8 @@ void right_push(bounded_deque_t *deque, int elt, int *stat) {
             
             if(CAS_NODE(&deque->nodes[k - 1], previous, prev_new)) {
                 if(CAS_NODE(&deque->nodes[k], current, cur_new)) {
-                    deque->size++;
+                    // update loc hint
+                    atomic_fetch_add(&deque->right_hint, 1);
                     *stat = OK;
                     return;
                 }
@@ -95,16 +111,17 @@ void right_push(bounded_deque_t *deque, int elt, int *stat) {
 }
 
 int right_pop(bounded_deque_t *deque, int *stat) {
-    unsigned long long int k;
+    atomic_ulong k;
     bounded_deque_node_t current, next;
+    int ret_val;
     
     while(1) {
-        k = oracle(RIGHT);
+        k = deque->right_hint;
         current = deque->nodes[k - 1];
         next = deque->nodes[k];
         
         if(current.value != RNULL && next.value == RNULL) {
-            if(current.value == LNULL && ATOMIC_EQL(&deque->nodes[k - 1], current)) {
+            if(current.value == LNULL && EQL_NODE(deque->nodes[k - 1], current)) {
                 *stat = EMPTY;
                 return *current.value;
             }
@@ -115,22 +132,17 @@ int right_pop(bounded_deque_t *deque, int *stat) {
             
             if(CAS_NODE(&deque->nodes[k], next, next_new)) {
                 if(CAS_NODE(&deque->nodes[k - 1], current, cur_new)) {
-                    deque->size--;
+                    // update loc hint
+                    atomic_fetch_add(&deque->right_hint, -1);
+                    // FREE OLD INT
+                    ret_val = *current.value;
+                    if(!IS_NULL(current.value))
+                        free(current.value);
                     *stat = OK;
-                    return *current.value;
+                    return ret_val;
                 }
             }
         }
-    }
-}
-
-unsigned long long int oracle(oracle_ends end) {
-    if(end == LEFT) {
-
-    } else if(end == RIGHT) {
-
-    } else {
-        
     }
 }
 

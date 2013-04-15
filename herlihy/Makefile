@@ -1,24 +1,36 @@
 
-BIN = deque
-SBIN = deque_circ
-OBIN = size_check segv_check
-CC = g++
-CCFLAGS = -c
+CXX = g++
+CC = $(CXX)
+CCFLAGS = -c -std=c++11
+CXXFLAGS = $(CCFLAGS)
 LDFLAGS = 
-CSRCS = $(BIN).c $(SBIN).c
-HSRCS = $(CSRCS:.c=.h)
-OBJS = $(CSRCS:.c=.o)
 
-all: $(BIN)
+ETC_DIR = etc
+SRC_DIR = src
+TEST_DIR = test
 
-$(BIN): $(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -o $(BIN)
+DSRCS = $(SRC_DIR)/deque.cc # $(SRC_DIR)/deque_circ.cc
+DLIBS = $(DSRCS:.cc=.h)
+DOBJS = $(DSRCS:.cc=.o)
 
-$(SBIN): $(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -o $(SBIN)
+ESRCS = $(ETC_DIR)/libatm_check.cc $(ETC_DIR)/segv_check.cc $(ETC_DIR)/size_check.cc
+ELIBS = $(ESRCS:.cc=.h)
+EOBJS = $(ESRCS:.cc=.o)
+EEXEC = $(ESRCS:%.cc=%)
 
-$(OBJS): $(CSRCS) $(HSRCS)
-	$(CC) $(CCFLAGS) $(CSRCS)
+TSRCS = 
+TLIBS = $(TSRCS:.cc=.h)
+TOBJS = $(TSRCS:.cc=.o)
+TEXEC = $(TSRCS:%.cc=%)
+
+SRCS = $(DSRCS) $(ESRCS) $(TSRCS)
+OBJS = $(DOBJS) $(EOBJS) $(TOBJS)
+EXECS = $(EEXEC) $(TEXEC)
+
+all: $(TEXEC)
+
+depend:
+	makedepend -Y $(SRCS)
 
 clean:
-	-rm $(OBJS) $(BIN) $(SBIN) $(OBIN) $(DEPS)
+	-rm $(EXECS) $(OBJS) 
