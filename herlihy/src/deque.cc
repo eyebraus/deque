@@ -1,8 +1,10 @@
 
-#include <stdatomic.h>
+#include <atomic>
 #include <stdio.h>
 #include <stdlib.h>
 #include "deque_circ.h"
+
+using namespace std;
 
 /*
  * TODOs and stuff
@@ -12,30 +14,30 @@
  *  - is my EQL_NODE macro legit?
  */
 
-void left_push(bounded_deque_t *deque, int elt, int *stat) {
-    atomic_ulong k;
+void left_push(bounded_deque_t &deque, int elt, int &stat) {
+    unsigned long int k;
     bounded_deque_node_t previous, current;
     
     while(1) {
-        k = deque->left_hint;
-        previous = deque->nodes[k + 1];
-        current = deque->nodes[k];
+        k = deque.left_hint.load();
+        previous = deque.nodes[k + 1].load(memory_order_acquire);
+        current = deque.nodes[k].load(memory_order_acquire);
         
         if(previous.value != LNULL && current.value == LNULL) {
             if(k <= 0) {
-                *stat = FULL;
+                stat = FULL;
                 return;
             }
 
             bounded_deque_node_t prev_new, cur_new;
-            copy_bounded_deque_node(&prev_new, &previous);
-            set_bounded_deque_node(&cur_new, &elt, current.count);
+            copy_bounded_deque_node(prev_new, previous);
+            set_bounded_deque_node(cur_new, &elt, current.count);
             
-            if(CAS_NODE(&deque->nodes[k + 1], &previous, prev_new)) {
-                if(CAS_NODE(&deque->nodes[k], &current, cur_new)) {
+            if(deque.nodes[k + 1].compare_exchange_strong(previous, prev_new)) {
+                if(deque.nodes[k].compare_exchange_strong(current, cur_new)) {
                     // update loc hint
-                    atomic_fetch_add(&deque->left_hint, -1);
-                    *stat = OK;
+                    deque.left_hint--;
+                    stat = OK;
                     return;
                 }
             }
@@ -43,35 +45,35 @@ void left_push(bounded_deque_t *deque, int elt, int *stat) {
     }
 }
 
-int left_pop(bounded_deque_t *deque, int *stat) {
-    atomic_ulong k;
+int left_pop(bounded_deque_t &deque, int &stat) {
+    unsigned long int k;
     bounded_deque_node_t current, next;
     int ret_val;
     
     while(1) {
-        k = deque->left_hint;
-        current = deque->nodes[k + 1];
-        next = deque->nodes[k];
+        k = deque.left_hint.load();
+        current = deque.nodes[k + 1].load(memory_order_acquire);
+        next = deque.nodes[k].load(memory_order_acquire);
         
         if(current.value != LNULL && next.value == LNULL) {
-            if(current.value == RNULL && EQL_NODE(deque->nodes[k + 1], current)) {
-                *stat = EMPTY;
+            if(current.value == RNULL && eql_node(deque.nodes[k + 1], current)) {
+                stat = EMPTY;
                 return *current.value;
             }
             
             bounded_deque_node_t cur_new, next_new;
-            set_bounded_deque_node(&cur_new, LNULL, current.count);
-            set_bounded_deque_node(&next_new, LNULL, next.count);
+            set_bounded_deque_node(cur_new, LNULL, current.count);
+            set_bounded_deque_node(next_new, LNULL, next.count);
             
-            if(CAS_NODE(&deque->nodes[k], next, next_new)) {
-                if(CAS_NODE(&deque->nodes[k + 1], current, cur_new)) {
+            if(deque.nodes[k].compare_and_exchange(next, next_new)) {
+                if(deque.nodes[k + 1].compare_and_exchange(current, cur_new)) {
                     // update loc hint
-                    atomic_fetch_add(&deque->left_hint, 1);
+                    deque.left_hint++;
                     // FREE OLD INT
                     ret_val = *current.value;
-                    if(!IS_NULL(current.value))
+                    if(!is_null(current.value))
                         free(current.value);
-                    *stat = OK;
+                    stat = OK;
                     return ret_val;
                 }
             }
@@ -79,30 +81,30 @@ int left_pop(bounded_deque_t *deque, int *stat) {
     }
 }
 
-void right_push(bounded_deque_t *deque, int elt, int *stat) {
-    unsigned long long int k;
+void right_push(bounded_deque_t &deque, int elt, int &stat) {
+    unsigned long int k;
     bounded_deque_node_t previous, current;
     
     while(1) {
-        k = deque->right_hint;
-        previous = deque->nodes[k - 1];
-        current = deque->nodes[k];
+        k = deque.right_hint.load();
+        previous = deque.nodes[k - 1].load(memory_order_acquire);
+        current = deque.nodes[k].load(memory_order_acquire);
         
         if(previous.value != RNULL && current.value == RNULL) {
             if(k >= DEF_BOUNDS) {
-                *stat = FULL;
+                stat = FULL;
                 return;
             }
 
             bounded_deque_node_t prev_new, cur_new;
-            copy_bounded_deque_node(&prev_new, &previous);
-            set_bounded_deque_node(&cur_new, &elt, current.count);
+            copy_bounded_deque_node(prev_new, previous);
+            set_bounded_deque_node(cur_new, &elt, current.count);
             
-            if(CAS_NODE(&deque->nodes[k - 1], previous, prev_new)) {
-                if(CAS_NODE(&deque->nodes[k], current, cur_new)) {
+            if(deque.nodes[k - 1].compare_and_exchange(previous, prev_new)) {
+                if(deque.nodes[k].compare_and_exchange(current, cur_new)) {
                     // update loc hint
-                    atomic_fetch_add(&deque->right_hint, 1);
-                    *stat = OK;
+                    deque.right_hint++;
+                    stat = OK;
                     return;
                 }
             }
@@ -110,35 +112,35 @@ void right_push(bounded_deque_t *deque, int elt, int *stat) {
     }
 }
 
-int right_pop(bounded_deque_t *deque, int *stat) {
-    atomic_ulong k;
+int right_pop(bounded_deque_t &deque, int &stat) {
+    unsigned long int k;
     bounded_deque_node_t current, next;
     int ret_val;
     
     while(1) {
-        k = deque->right_hint;
-        current = deque->nodes[k - 1];
-        next = deque->nodes[k];
+        k = deque.right_hint.load();
+        current = deque.nodes[k - 1].load(memory_order_acquire);
+        next = deque.nodes[k].load(memory_order_acquire);
         
         if(current.value != RNULL && next.value == RNULL) {
-            if(current.value == LNULL && EQL_NODE(deque->nodes[k - 1], current)) {
-                *stat = EMPTY;
+            if(current.value == LNULL && eql_node(deque.nodes[k - 1], current)) {
+                stat = EMPTY;
                 return *current.value;
             }
             
             bounded_deque_node_t cur_new, next_new;
-            set_bounded_deque_node(&cur_new, RNULL, current.count);
-            set_bounded_deque_node(&next_new, RNULL, next.count);
+            set_bounded_deque_node(cur_new, RNULL, current.count);
+            set_bounded_deque_node(next_new, RNULL, next.count);
             
-            if(CAS_NODE(&deque->nodes[k], next, next_new)) {
-                if(CAS_NODE(&deque->nodes[k - 1], current, cur_new)) {
+            if(deque.nodes[k].compare_and_exchange(next, next_new)) {
+                if(deque.nodes[k - 1].compare_and_exchange(current, cur_new)) {
                     // update loc hint
-                    atomic_fetch_add(&deque->right_hint, -1);
+                    deque.right_hint--;
                     // FREE OLD INT
                     ret_val = *current.value;
-                    if(!IS_NULL(current.value))
+                    if(!is_null(current.value))
                         free(current.value);
-                    *stat = OK;
+                    stat = OK;
                     return ret_val;
                 }
             }
@@ -146,76 +148,74 @@ int right_pop(bounded_deque_t *deque, int *stat) {
     }
 }
 
-void init_bounded_deque_node(bounded_deque_node_t *node) {
-    node->value = NULL;
-    node->count = 0;
+void init_bounded_deque_node(atomic_deque_node_t &node) {
+    bounded_deque_node_t blank_node;
+    blank_node.value = NULL;
+    blank_node.count = 0;
+    node.store(blank_node);
 }
 
-void init_bounded_deque(bounded_deque_t *deque) {
+void init_bounded_deque(bounded_deque_t &deque) {
     int i;
     
-    deque->size = 0;
     for(i = 0; i < DEF_BOUNDS; i++) {
-        init_bounded_deque_node(&deque->nodes[i]);
+        init_bounded_deque_node(deque.nodes[i]);
         if(i < DEF_BOUNDS / 2)
-            deque->nodes[i].value = LNULL;
+            deque.nodes[i].value = LNULL;
         else 
-            deque->nodes[i].value = RNULL;
+            deque.nodes[i].value = RNULL;
     }
+    
+    deque.size = 0;
+    deque.left_hint = DEF_BOUNDS / 2 - 1;
+    deque.right_hint = DEF_BOUNDS / 2;
 }
 
-void init_oracle_result(oracle_result_t *result) {
-    result->k = 0;
-    init_bounded_deque_node(&result->left);
-    init_bounded_deque_node(&result->right);
+void clear_bounded_deque_node(atomic_deque_node_t &node) {
+    int *val_save;
+    bounded_deque_node_t blank_node, old_node;
+    blank_node.value = NULL;
+    blank_node.count = 0;
+    old_node = node.exchange(blank_node);
+    if(!is_null(old_node.value))
+        free(old_node.value);
 }
 
-void clear_bounded_deque_node(bounded_deque_node_t *node) {
-    if(!IS_NULL(node->value))
-        free(node->value);
-    node->value = NULL;
-    // do not change the count!!!
-}
-
-void clear_bounded_deque(bounded_deque_t *deque) {
+void clear_bounded_deque(bounded_deque_t &deque) {
     int i;
     
     for(i = 0; i < DEF_BOUNDS; i++) {
-        clear_bounded_deque_node(&deque->nodes[i]);
-        // clear counts here
-        deque->nodes[i].count = 0;
+        clear_bounded_deque_node(deque.nodes[i]);
+        if(i < DEF_BOUNDS / 2)
+            deque.nodes[i].value = LNULL;
+        else 
+            deque.nodes[i].value = RNULL;
     }
-    deque->size = 0;
+    
+    deque.size = 0;
+    deque.left_hint = DEF_BOUNDS / 2 - 1;
+    deque.right_hint = DEF_BOUNDS / 2;
 }
 
-void clear_oracle_result(oracle_result_t *result) {
-    result->k = 0;
-    clear_bounded_deque_node(&result->left);
-    clear_bounded_deque_node(&result->right);
-}
-
-void set_bounded_deque_node(bounded_deque_node_t *node, int *value, unsigned int last_count) {
-    if(IS_NULL(value))
-        node->value = value;
+void set_bounded_deque_node(bounded_deque_node_t &node, int *value, unsigned int last_count) {
+    if(is_null(value))
+        node.value = value;
     else {
-        node->value = (int *) malloc(sizeof(int));
-        *node->value = *value;
+        node.value = (int *) malloc(sizeof(int));
+        *node.value = *value;
     }
-    node->count = last_count + 1;
+    node.count = last_count + 1;
 }
 
-void copy_bounded_deque_node(bounded_deque_node_t *old_node, bounded_deque_node_t *new_node) {
+void copy_bounded_deque_node(bounded_deque_node_t &old_node, bounded_deque_node_t &new_node) {
     int *value = new_node->value;
 
-    if(IS_NULL(value))
-        new_node->value = value;
+    if(is_null(value))
+        new_node.value = value;
     else {
-        new_node->value = (int *) malloc(sizeof(int));
-        *new_node->value = *value;
+        new_node.value = (int *) malloc(sizeof(int));
+        *new_node.value = *value;
     }
-    new_node->count = old_node->count + 1;
+    new_node.count = old_node.count + 1;
 }
 
-int main(int argc, char *argv[]) {
-
-}

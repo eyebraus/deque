@@ -13,7 +13,7 @@ DSRCS = $(SRC_DIR)/deque.cc # $(SRC_DIR)/deque_circ.cc
 DLIBS = $(DSRCS:.cc=.h)
 DOBJS = $(DSRCS:.cc=.o)
 
-ESRCS = $(ETC_DIR)/libatm_check.cc $(ETC_DIR)/segv_check.cc $(ETC_DIR)/size_check.cc
+ESRCS = $(ETC_DIR)/libatm_check.cc #$(ETC_DIR)/segv_check.cc $(ETC_DIR)/size_check.cc
 ELIBS = $(ESRCS:.cc=.h)
 EOBJS = $(ESRCS:.cc=.o)
 EEXEC = $(ESRCS:%.cc=%)
@@ -24,10 +24,10 @@ TOBJS = $(TSRCS:.cc=.o)
 TEXEC = $(TSRCS:%.cc=%)
 
 SRCS = $(DSRCS) $(ESRCS) $(TSRCS)
-OBJS = $(DOBJS) $(EOBJS) $(TOBJS)
+OBJS = $(DOBJS) $(TOBJS)
 EXECS = $(EEXEC) $(TEXEC)
 
-all: $(TEXEC)
+all: $(EEXEC) $(TEXEC)
 
 depend:
 	makedepend -Y $(SRCS)
