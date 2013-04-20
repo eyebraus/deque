@@ -3,7 +3,7 @@
 
 #define LNULL (int *) 0b01
 #define RNULL (int *) 0b10
-#define DEF_BOUNDS 4096
+#define DEF_BOUNDS 32
 
 using namespace std;
 
@@ -33,16 +33,17 @@ typedef enum { OK, EMPTY, FULL } deque_state;
  * Inline Functions ("macros")
  */
 
-static inline bool cas_node(atomic_deque_node_t &current, bounded_deque_node_t &expected, bounded_deque_node &desired) {
+static inline bool cas_node(atomic_deque_node_t &current, bounded_deque_node_t &expected, bounded_deque_node_t &desired) {
     return current.compare_exchange_strong(expected, desired);
 }
 
-static inline bool eql_node(bounded_deque_node_t &a, bounded_deque_node_t &b) {
-    return a.value == b.value && a.count == b.count;
+static inline bool compare_node(atomic_deque_node_t &a, bounded_deque_node_t &b) {
+    bounded_deque_node_t a_copy = a.load(memory_order_acquire);
+    return a_copy.value == b.value && a_copy.count == b.count;
 }
 
-static inline bool is_null(bounded_deque_node_t &v) {
-    return v.value == NULL || v.value == LNULL || v.value == RNULL;
+static inline bool is_null(int *v) {
+    return v == NULL || v == LNULL || v == RNULL;
 }
 
 static inline bool val_eql(bounded_deque_node_t &a, bounded_deque_node_t &b) {
