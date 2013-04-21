@@ -312,12 +312,14 @@ int spec010(int &stat) {
     // check all counters
     for(i = 0; i < DEF_BOUNDS; i++) {
         fprintf(stdout, "\tCheck iteration %3d\n", i);
-        if(i == DEF_BOUNDS / 2) {
+        if(i == DEF_BOUNDS / 2 - 1) {
             assert(test_deque.nodes[i].load().count == 2);
+        } else if(i == DEF_BOUNDS / 2) {
+            assert(test_deque.nodes[i].load().count == 5);
         } else if(i == DEF_BOUNDS / 2 + 1) {
-            assert(test_deque.nodes[i].load().count == 4);
+            assert(test_deque.nodes[i].load().count == 6);
         } else if(i == DEF_BOUNDS / 2 + 2) {
-            assert(test_deque.nodes[i].load().count == 2);
+            assert(test_deque.nodes[i].load().count == 3);
         } else {
             assert(test_deque.nodes[i].load().count == 0);
         }
