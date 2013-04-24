@@ -9,9 +9,7 @@ using namespace std;
 /*
  * TODOs and stuff
  * ---------------
- *  - do the left/right hints really need to be atomic?
- *  - what needs to be atomic?
- *  - is my EQL_NODE macro legit?
+ *     - actually write oracle function. the hints are, in fact, just hints
  */
 
 void left_push(bounded_deque_t &deque, int elt, int &stat) {

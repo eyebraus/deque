@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include "../src/deque.h"
+#include "concurrent.h"
 #include "spec.h"
 
 #define SPEC_COUNT 7
