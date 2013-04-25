@@ -18,7 +18,7 @@ ELIBS = $(ESRCS:.cc=.h)
 EOBJS = $(ESRCS:.cc=.o)
 EEXEC = $(ESRCS:%.cc=%)
 
-TSRCS = $(TEST_DIR)/serial.cc $(TEST_DIR)/concurrent.cc
+TSRCS = $(TEST_DIR)/serial.cc $(TEST_DIR)/concurrent.cc $(TEST_DIR)/stress.cc
 TLIBS = $(TSRCS:.cc=.h)
 TOBJS = $(TSRCS:.cc=.o)
 TEXEC = $(TSRCS:%.cc=%)
@@ -47,6 +47,9 @@ $(TEST_DIR)/serial: $(DOBJS) $(TEST_DIR)/serial.o
 	$(CC) $(LDFLAGS) -o $@ $^
 
 $(TEST_DIR)/concurrent: $(DOBJS) $(TEST_DIR)/concurrent.o 
+	$(CC) $(LDFLAGS) -o $@ $^ -D_XOPEN_SOURCE=600 -pthread
+
+$(TEST_DIR)/stress: $(DOBJS) $(TEST_DIR)/stress.o 
 	$(CC) $(LDFLAGS) -o $@ $^ -D_XOPEN_SOURCE=600 -pthread
 
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cc $(SRC_DIR)/%.h

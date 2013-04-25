@@ -1,6 +1,7 @@
 
 #include <assert.h>
 #include <atomic>
+#include <chrono>
 #include <pthread.h>
 #include <random>
 #include <set>
@@ -11,9 +12,9 @@
 #include "spec.h"
 #include "stress.h"
 
-#define THREAD_COUNT 7
+#define THREAD_COUNT 20
 #define FREEZE_COUNT 1000
-#define N_TRIES      50
+#define N_TRIES      100
 
 using namespace std;
 
@@ -34,16 +35,18 @@ thread_stats_t stats[THREAD_COUNT];
 pthread_barrier_t barrier;
 
 void *rand_ops(void *args_void) {
-    default_random_engine rand_engine;
-    uniform_real_distribution<double> value_dist(0.0, 65536.00);
+    default_random_engine rand_engine(chrono::system_clock::now().time_since_epoch().count());
+    uniform_real_distribution<double> value_dist(0.0, 65536.0);
     uniform_real_distribution<double> op_dist(0.0, 1.0);
+    vector<int *> free_list;
+    vector<int *>::iterator vi;
     
     // unpack args
     thread_args_t *thread_args = (thread_args_t *) args_void;
     int id = thread_args->id, i, j;
     
     // wait to launch thread work
-    wait_on_barrier(barrier);
+    wait_on_barrier(&barrier);
     // do random thangs
     for(i = 0; i < N_TRIES; i++) {
         for(j = 0; j < FREEZE_COUNT; j++) {
@@ -51,19 +54,28 @@ void *rand_ops(void *args_void) {
             double random_op = op_dist(rand_engine);
             if(random_op < 0.5) {
                 // push op
-                double random_value = value_dist(rand_engine);    
+                int *random_value = (int *) malloc(sizeof(int));
+                *random_value = (int) value_dist(rand_engine); 
                 if(random_op < 0.25) {
                     left_push(test_deque, random_value, op_status);
-                    if(op_status == OK)
+                    if(op_status == OK) {
                         stats[id].left_pushes++;
+                        free_list.push_back(random_value);
+                    } else {
+                        free(random_value);
+                    }
                 } else {
                     right_push(test_deque, random_value, op_status);
-                    if(op_status == OK)
+                    if(op_status == OK) {
                         stats[id].right_pushes++;
+                        free_list.push_back(random_value);
+                    } else {
+                        free(random_value);
+                    }
                 }
             } else {
                 // pop op
-                int popped_value;
+                int *popped_value;
                 if(random_op < 0.75) {
                     popped_value = left_pop(test_deque, op_status);
                     if(op_status == OK)
@@ -76,11 +88,18 @@ void *rand_ops(void *args_void) {
             }
         }
         // allow main thread to scan
-        wait_on_barrier(barrier);
+        wait_on_barrier(&barrier);
+        wait_on_barrier(&barrier);
+        // free old values
+        for(vi = free_list.begin(); vi != free_list.end(); vi++)
+            free(*vi);
+        free_list.clear();
     }
+
+    pthread_exit(NULL);
 }
 
-bool is_consistent(int &status_code) {
+bool is_consistent(bounded_deque_t &deque, int &status_code) {
     int i, deque_section = LEFT_BLANK;
     
     // first scan: data struct invariants hold
@@ -88,12 +107,12 @@ bool is_consistent(int &status_code) {
         status_code = LEFT_END_CORRUPT;
         return false;
     }
-    if(deque.nodes[DEF_BOUNDS - 1].load().value == RNULL) {
+    if(deque.nodes[DEF_BOUNDS - 1].load().value != RNULL) {
         status_code = RIGHT_END_CORRUPT;
         return false;
     }
     for(i = 0; i < DEF_BOUNDS; i++) {
-        deque_node_t current = deque.nodes[0].load();
+        bounded_deque_node_t current = deque.nodes[i].load();
         if(deque_section == LEFT_BLANK) {
             if(!is_null(current.value)) {
                 // start of queue contents
@@ -128,7 +147,21 @@ bool is_consistent(int &status_code) {
     int actual_size = 0;
     unsigned long long int expected_size = 0;
     for(i = 0; i < THREAD_COUNT; i++) {
-        // TODO: start from here
+        expected_size += (stats[i].left_pushes + stats[i].right_pushes);
+        expected_size -= (stats[i].left_pops + stats[i].right_pops);
+    }
+    for(i = 0; i < DEF_BOUNDS; i++) {
+        bounded_deque_node_t current = deque.nodes[i].load();
+        if(!is_null(current.value))
+            actual_size++;
+    }
+    if(actual_size > (int) expected_size) {
+        status_code = LOST_OPS;
+        return false;
+    }
+    if(actual_size < (int) expected_size) {
+        status_code = EXTRA_OPS;
+        return false;
     }
     
     status_code = CONSISTENT;
@@ -148,27 +181,52 @@ int main(int argc, char *argv[]) {
         init_thread_stats(stats[i]);
         start_pthread(threads[i], &rand_ops, args[i]);
     }
+    fprintf(stdout, "\t\tInitial deque state:\n");
+    fprintf(stdout, "\t\t\tsize: %lu\n", test_deque.size.load());
+    fprintf(stdout, "\t\t\tleft_hint: %lu\n", test_deque.left_hint.load());
+    fprintf(stdout, "\t\t\tright_hint: %lu\n", test_deque.right_hint.load());
     // launch thread work
-    wait_on_barrier(barrier);
+    wait_on_barrier(&barrier);
     // wait on barrier, then scan
     for(i = 0; i < N_TRIES; i++) {
         fprintf(stdout, "\tTry & scan iteration %d\n", i + 1);
-        wait_on_barrier(barrier);
-        if(!is_consistent(err_stat)) {
+        wait_on_barrier(&barrier);
+        if(!is_consistent(test_deque, err_stat)) {
             fprintf(stderr, "\t\tUh oh, inconsistent deque state...\n");
             switch(err_stat) {
-                // TODO: figure out error cases, when scan is written
-                //case :
+                case LEFT_END_CORRUPT:
+                    fprintf(stderr, "\t\t\tError: left end pointer corrupt\n");
+                    break;
+                case RIGHT_END_CORRUPT:
+                    fprintf(stderr, "\t\t\tError: right end pointer corrupt\n");
+                    break;
+                case BROKEN_LEFT_SECTION:
+                    fprintf(stderr, "\t\t\tError: found non-contiguous LNULLs\n");
+                    break;
+                case BROKEN_RIGHT_SECTION:
+                    fprintf(stderr, "\t\t\tError: found non-contiguous RNULLs\n");
+                    break;
+                case MIXED_LEFT_RIGHT_SECTION:
+                    fprintf(stderr, "\t\t\tError: found non-contiguous LNULLs/RNULLs\n");
+                    break;
+                case LOST_OPS:
+                    fprintf(stderr, "\t\t\tError: # ops < size of deque\n");
+                    break;
+                case EXTRA_OPS:
+                    fprintf(stderr, "\t\t\tError: # ops > size of deque\n");
+                    break;
                 default:
                     fprintf(stderr, "\t\t\twtf is going on?\n");
                     exit(0);
             }
+            exit(err_stat);
         } else {
             fprintf(stdout, "\t\tDeque was consistent, current state:\n");
             fprintf(stdout, "\t\t\tsize: %lu\n", test_deque.size.load());
             fprintf(stdout, "\t\t\tleft_hint: %lu\n", test_deque.left_hint.load());
             fprintf(stdout, "\t\t\tright_hint: %lu\n", test_deque.right_hint.load());
         }
+        wait_on_barrier(&barrier);
     }
     // test completed successfully!
     fprintf(stdout, "\tDeque consistent through all iterations! Exiting...\n");

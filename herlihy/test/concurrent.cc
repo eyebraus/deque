@@ -18,7 +18,7 @@ bounded_deque_t test_deque;
 
 typedef struct spec_result_struct {
     int size;
-    int *results;
+    int **results;
 } spec_result_t;
 
 /*
@@ -63,13 +63,17 @@ void *spec001_helper(void *args_void) {
     if(id == 1) {
         for(i = 0; i < 4; i++) {
             fprintf(stdout, "\tPush iteration %3d\n", i + 1);
-            left_push(test_deque, i + 1, push_status);
+            int *push_value = (int *) malloc(sizeof(int));
+            *push_value = i + 1;
+            left_push(test_deque, push_value, push_status);
             assert(push_status == OK);
         }
     } else {
         for(i = 4; i < 7; i++) {
             fprintf(stdout, "\tPush iteration %3d\n", i + 1);
-            left_push(test_deque, i + 1, push_status);
+            int *push_value = (int *) malloc(sizeof(int));
+            *push_value = i + 1;
+            left_push(test_deque, push_value, push_status);
             assert(push_status == OK);
         }
     }
@@ -120,13 +124,17 @@ void *spec002_helper(void *args_void) {
     if(id == 1) {
         for(i = 0; i < 4; i++) {
             fprintf(stdout, "\tPush iteration %3d\n", i + 1);
-            right_push(test_deque, i + 1, push_status);
+            int *push_value = (int *) malloc(sizeof(int));
+            *push_value = i + 1;
+            right_push(test_deque, push_value, push_status);
             assert(push_status == OK);
         }
     } else {
         for(i = 4; i < 7; i++) {
             fprintf(stdout, "\tPush iteration %3d\n", i + 1);
-            right_push(test_deque, i + 1, push_status);
+            int *push_value = (int *) malloc(sizeof(int));
+            *push_value = i + 1;
+            right_push(test_deque, push_value, push_status);
             assert(push_status == OK);
         }
     }
@@ -166,10 +174,10 @@ int spec002() {
 void *spec003_helper(void *args_void) {
     unsigned int id = ((thread_args_t *) args_void)->id;
     pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
-    int i, pop_status, result, *results;
+    int i, pop_status, *result, **results;
 
     assert(id == 1 || id == 2);
-    results = (int *) malloc(sizeof(int) * (id == 1 ? 4 : 3));
+    results = (int **) malloc(sizeof(int *) * (id == 1 ? 4 : 3));
     
     // sync starting times of threads
     wait_on_barrier(barrier);
@@ -205,7 +213,7 @@ int spec003() {
     fprintf(stdout, "Spec %3d\n", 3);
     for(p = 0; p < 7; p++) {
         fprintf(stdout, "\tPush iteration %3d\n", p + 1);
-        left_push(test_deque, expected_init[p], push_status);
+        left_push(test_deque, &expected_init[p], push_status);
         assert(push_status == OK);
     }
     init_pthread_barrier(barrier, 2);
@@ -215,8 +223,13 @@ int spec003() {
     start_pthread(thread2, &spec003_helper, thread_args2);
     wait_on_pthread(thread1, &rvoid1);
     wait_on_pthread(thread2, &rvoid2);
-    set<int> results1((int *) rvoid1, (int *) rvoid1 + 4);
-    set<int> results2((int *) rvoid2, (int *) rvoid2 + 3);
+    //set<int *> results1((int **) rvoid1, (int **) rvoid1 + 4);
+    //set<int *> results2((int **) rvoid2, (int **) rvoid2 + 3);
+    set<int> results1, results2;
+    for(p = 0; p < 4; p++)
+        results1.insert(*((int **) rvoid1)[p]);
+    for(p = 0; p < 3; p++)
+        results2.insert(*((int **) rvoid2)[p]);
     
     assert(test_deque.size == 0);
     assert(test_deque.left_hint == DEF_BOUNDS / 2 - 1);
@@ -238,10 +251,10 @@ int spec003() {
 void *spec004_helper(void *args_void) {
     unsigned int id = ((thread_args_t *) args_void)->id;
     pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
-    int i, pop_status, result, *results;
+    int i, pop_status, *result, **results;
 
     assert(id == 1 || id == 2);
-    results = (int *) malloc(sizeof(int) * (id == 1 ? 4 : 3));
+    results = (int **) malloc(sizeof(int *) * (id == 1 ? 4 : 3));
     
     // sync starting times of threads
     wait_on_barrier(barrier);
@@ -277,7 +290,7 @@ int spec004() {
     fprintf(stdout, "Spec %3d\n", 4);
     for(p = 0; p < 7; p++) {
         fprintf(stdout, "\tPush iteration %3d\n", p + 1);
-        right_push(test_deque, expected_init[p], push_status);
+        right_push(test_deque, &expected_init[p], push_status);
         assert(push_status == OK);
     }
     init_pthread_barrier(barrier, 2);
@@ -287,8 +300,13 @@ int spec004() {
     start_pthread(thread2, &spec004_helper, thread_args2);
     wait_on_pthread(thread1, &rvoid1);
     wait_on_pthread(thread2, &rvoid2);
-    set<int> results1((int *) rvoid1, (int *) rvoid1 + 4);
-    set<int> results2((int *) rvoid2, (int *) rvoid2 + 3);
+    //set<int *> results1((int **) rvoid1, (int **) rvoid1 + 4);
+    //set<int *> results2((int **) rvoid2, (int **) rvoid2 + 3);
+    set<int> results1, results2;
+    for(p = 0; p < 4; p++)
+        results1.insert(*((int **) rvoid1)[p]);
+    for(p = 0; p < 3; p++)
+        results2.insert(*((int **) rvoid2)[p]);
     
     assert(test_deque.size == 0);
     assert(test_deque.left_hint == DEF_BOUNDS / 2 - 1);
@@ -310,11 +328,11 @@ int spec004() {
 void *spec005_helper(void *args_void) {
     unsigned int id = ((thread_args_t *) args_void)->id;
     pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
-    int i = 0, pop_status, result, *results;
+    int i = 0, pop_status, *result, **results;
     spec_result_t *spec_result = (spec_result_t *) malloc(sizeof(spec_result_t));
 
     assert(id == 1 || id == 2);
-    results = (int *) malloc(sizeof(int) * (DEF_BOUNDS - 2));
+    results = (int **) malloc(sizeof(int *) * (DEF_BOUNDS - 2));
     
     // sync starting times of threads
     wait_on_barrier(barrier);
@@ -348,7 +366,7 @@ int spec005() {
     pthread_t thread1, thread2;
     thread_args_t thread_args1, thread_args2;
     pthread_barrier_t barrier;
-    int p, push_status;
+    int p, push_status, *push_value;
     void *rvoid1, *rvoid2;
     spec_result_t *results1, *results2;
     set<int> expected;
@@ -357,9 +375,13 @@ int spec005() {
     
     for(p = 0; p < 15; p++) {
         fprintf(stdout, "\tPush iteration %3d\n", p + 1);
-        left_push(test_deque, (p + 1) * -1, push_status);
+        push_value = (int *) malloc(sizeof(int));
+        *push_value = (p + 1) * -1;
+        left_push(test_deque, push_value, push_status);
         assert(push_status == OK);
-        right_push(test_deque, p + 1, push_status);
+        push_value = (int *) malloc(sizeof(int));
+        *push_value = p + 1;
+        right_push(test_deque, push_value, push_status);
         assert(push_status == OK);
         expected.insert((p + 1) * -1);
         expected.insert(p + 1);
@@ -374,8 +396,13 @@ int spec005() {
     wait_on_pthread(thread2, &rvoid2);
     results1 = (spec_result_t *) rvoid1;
     results2 = (spec_result_t *) rvoid2;
-    set<int> results1_set(results1->results, results1->results + results1->size);
-    set<int> results2_set(results2->results, results2->results + results2->size);
+    //set<int *> results1_set(results1->results, results1->results + results1->size);
+    //set<int *> results2_set(results2->results, results2->results + results2->size);
+    set<int> results1_set, results2_set;
+    for(p = 0; p < results1->size; p++)
+        results1_set.insert(*results1->results[p]);
+    for(p = 0; p < results2->size; p++)
+        results2_set.insert(*results2->results[p]);
     
     assert(test_deque.size == 0);
     assert(test_deque.left_hint < test_deque.right_hint);
@@ -400,7 +427,7 @@ int spec005() {
 void *spec006_helper(void *args_void) {
     unsigned int id = ((thread_args_t *) args_void)->id;
     pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
-    int i, push_status, pop_status, result, *results = (int *) malloc(sizeof(int) * 7);
+    int i, push_status, pop_status, *result, **results = (int **) malloc(sizeof(int *) * 7);
     struct timespec sleep_time;
     sleep_time.tv_sec = 0;
     sleep_time.tv_nsec = 25;
@@ -413,8 +440,10 @@ void *spec006_helper(void *args_void) {
     if(id == 1) {
         for(i = 0; i < 7; i++) {
             fprintf(stdout, "\tPush iteration %3d\n", i + 1);
-            left_push(test_deque, i + 1, push_status);
-            results[i] = i + 1;
+            int *push_value = (int *) malloc(sizeof(int));
+            *push_value = i + 1;
+            left_push(test_deque, push_value, push_status);
+            results[i] = push_value;
             assert(push_status == OK);
         }
     } else {
@@ -439,7 +468,7 @@ int spec006() {
     thread_args_t thread_args1, thread_args2;
     pthread_barrier_t barrier;
     void *rvoid1, *rvoid2;
-    int *results1, *results2, i;
+    int **results1, **results2, i;
     
     fprintf(stdout, "Spec %3d\n", 6);
     init_pthread_barrier(barrier, 2);
@@ -449,15 +478,15 @@ int spec006() {
     start_pthread(thread2, &spec006_helper, thread_args2);
     wait_on_pthread(thread1, &rvoid1);
     wait_on_pthread(thread2, &rvoid2);
-    results1 = (int *) rvoid1;
-    results2 = (int *) rvoid2;
+    results1 = (int **) rvoid1;
+    results2 = (int **) rvoid2;
     
     assert(test_deque.size == 0);
     assert(test_deque.left_hint < test_deque.right_hint);
     assert(test_deque.left_hint == test_deque.right_hint - 1);
     // ensure same order
     for(i = 0; i < 7; i++) {
-        assert(results1[i] == results2[i]);
+        assert(*results1[i] == *results2[i]);
     }
     
     free(results1);
@@ -468,7 +497,7 @@ int spec006() {
 void *spec007_helper(void *args_void) {
     unsigned int id = ((thread_args_t *) args_void)->id;
     pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
-    int i, push_status, pop_status, result, *results = (int *) malloc(sizeof(int) * 7);
+    int i, push_status, pop_status, *result, **results = (int **) malloc(sizeof(int) * 7);
     struct timespec sleep_time;
     sleep_time.tv_sec = 0;
     sleep_time.tv_nsec = 25;
@@ -481,8 +510,10 @@ void *spec007_helper(void *args_void) {
     if(id == 1) {
         for(i = 0; i < 7; i++) {
             fprintf(stdout, "\tPush iteration %3d\n", i + 1);
-            right_push(test_deque, i + 1, push_status);
-            results[i] = i + 1;
+            int *push_value = (int *) malloc(sizeof(int));
+            *push_value = i + 1;
+            right_push(test_deque, push_value, push_status);
+            results[i] = push_value;
             assert(push_status == OK);
         }
     } else {
@@ -507,7 +538,7 @@ int spec007() {
     thread_args_t thread_args1, thread_args2;
     pthread_barrier_t barrier;
     void *rvoid1, *rvoid2;
-    int *results1, *results2, i;
+    int **results1, **results2, i;
     
     fprintf(stdout, "Spec %3d\n", 7);
     init_pthread_barrier(barrier, 2);
@@ -517,15 +548,15 @@ int spec007() {
     start_pthread(thread2, &spec007_helper, thread_args2);
     wait_on_pthread(thread1, &rvoid1);
     wait_on_pthread(thread2, &rvoid2);
-    results1 = (int *) rvoid1;
-    results2 = (int *) rvoid2;
+    results1 = (int **) rvoid1;
+    results2 = (int **) rvoid2;
     
     assert(test_deque.size == 0);
     assert(test_deque.left_hint < test_deque.right_hint);
     assert(test_deque.left_hint == test_deque.right_hint - 1);
     // ensure same order
     for(i = 0; i < 7; i++) {
-        assert(results1[i] == results2[i]);
+        assert(*results1[i] == *results2[i]);
     }
     
     free(results1);
