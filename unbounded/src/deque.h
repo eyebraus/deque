@@ -26,7 +26,7 @@ typedef struct bounded_deque_struct {
     atomic_ulong right_hint;
 } bounded_deque_t;
 
-typedef enum { LEFT, RIGHT } oracle_ends;
+typedef enum { LEFT, RIGHT } oracle_end;
 typedef enum { OK, EMPTY, FULL } deque_state;
 
 /*
@@ -38,7 +38,7 @@ static inline bool cas_node(atomic_deque_node_t &current, bounded_deque_node_t &
 }
 
 static inline bool compare_node(atomic_deque_node_t &a, bounded_deque_node_t &b) {
-    bounded_deque_node_t a_copy = a.load(memory_order_acquire);
+    bounded_deque_node_t a_copy = a.load();
     return a_copy.value == b.value && a_copy.count == b.count;
 }
 
@@ -55,10 +55,11 @@ static inline bool val_eql(bounded_deque_node_t &a, bounded_deque_node_t &b) {
  */
 
 // stack ops
-void left_push(bounded_deque_t &deque, int elt, int &stat);
-int left_pop(bounded_deque_t &deque, int &stat);
-void right_push(bounded_deque_t &deque, int elt, int &stat);
-int right_pop(bounded_deque_t &deque, int &stat);
+void left_push(bounded_deque_t &deque, int *elt, int &stat);
+int *left_pop(bounded_deque_t &deque, int &stat);
+void right_push(bounded_deque_t &deque, int *elt, int &stat);
+int *right_pop(bounded_deque_t &deque, int &stat);
+unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end);
 
 // various helpers
 void init_bounded_deque_node(atomic_deque_node_t &node);
