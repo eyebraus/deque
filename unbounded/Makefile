@@ -13,7 +13,7 @@ DSRCS = $(SRC_DIR)/deque.cc# $(SRC_DIR)/deque_circ.cc
 DLIBS = $(DSRCS:.cc=.h)
 DOBJS = $(DSRCS:.cc=.o)
 
-ESRCS = $(ETC_DIR)/libatm_check.cc# $(ETC_DIR)/segv_check.cc $(ETC_DIR)/size_check.cc
+ESRCS = $(ETC_DIR)/size_check.cc
 ELIBS = $(ESRCS:.cc=.h)
 EOBJS = $(ESRCS:.cc=.o)
 EEXEC = $(ESRCS:%.cc=%)
@@ -42,6 +42,9 @@ EXECS = $(EEXEC) $(TEXEC)
 	#$(CC) $(CCFLAGS) $(@:.o=.c) -o $@
 
 all: $(EEXEC) $(TEXEC)
+
+$(ETC_DIR)/size_check: $(ETC_DIR)/size_check.o
+	$(CC) $(LDFLAGS) -o $@ $^
 
 $(TEST_DIR)/serial: $(DOBJS) $(TEST_DIR)/serial.o 
 	$(CC) $(LDFLAGS) -o $@ $^

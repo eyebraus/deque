@@ -12,9 +12,9 @@ using namespace std;
  *     - actually write oracle function. the hints are, in fact, just hints
  */
 
-void left_push(bounded_deque_t &deque, int *elt, int &stat) {
+void left_push(deque_t &deque, int *elt, int &stat) {
     unsigned long int k;
-    bounded_deque_node_t previous, current;
+    deque_node_t previous, current;
     
     while(1) {
         k = oracle(deque, LEFT);
@@ -28,9 +28,9 @@ void left_push(bounded_deque_t &deque, int *elt, int &stat) {
                 return;
             }
 
-            bounded_deque_node_t prev_new, cur_new;
-            copy_bounded_deque_node(prev_new, previous);
-            set_bounded_deque_node(cur_new, elt, current.count);
+            deque_node_t prev_new, cur_new;
+            copy_deque_node(prev_new, previous);
+            set_deque_node(cur_new, elt, current.count);
             
             if(deque.nodes[k + 1].compare_exchange_strong(previous, prev_new)) {
                 if(deque.nodes[k].compare_exchange_strong(current, cur_new)) {
@@ -45,9 +45,9 @@ void left_push(bounded_deque_t &deque, int *elt, int &stat) {
     }
 }
 
-int *left_pop(bounded_deque_t &deque, int &stat) {
+int *left_pop(deque_t &deque, int &stat) {
     unsigned long int k;
-    bounded_deque_node_t current, next;
+    deque_node_t current, next;
     
     while(1) {
         k = oracle(deque, LEFT);
@@ -61,9 +61,9 @@ int *left_pop(bounded_deque_t &deque, int &stat) {
                 return NULL;
             }
             
-            bounded_deque_node_t cur_new, next_new;
-            set_bounded_deque_node(cur_new, LNULL, current.count);
-            set_bounded_deque_node(next_new, LNULL, next.count);
+            deque_node_t cur_new, next_new;
+            set_deque_node(cur_new, LNULL, current.count);
+            set_deque_node(next_new, LNULL, next.count);
             
             if(deque.nodes[k].compare_exchange_strong(next, next_new)) {
                 if(deque.nodes[k + 1].compare_exchange_strong(current, cur_new)) {
@@ -78,9 +78,9 @@ int *left_pop(bounded_deque_t &deque, int &stat) {
     }
 }
 
-void right_push(bounded_deque_t &deque, int *elt, int &stat) {
+void right_push(deque_t &deque, int *elt, int &stat) {
     unsigned long int k;
-    bounded_deque_node_t previous, current;
+    deque_node_t previous, current;
     
     while(1) {
         k = oracle(deque, RIGHT);
@@ -94,9 +94,9 @@ void right_push(bounded_deque_t &deque, int *elt, int &stat) {
                 return;
             }
 
-            bounded_deque_node_t prev_new, cur_new;
-            copy_bounded_deque_node(prev_new, previous);
-            set_bounded_deque_node(cur_new, elt, current.count);
+            deque_node_t prev_new, cur_new;
+            copy_deque_node(prev_new, previous);
+            set_deque_node(cur_new, elt, current.count);
             
             if(deque.nodes[k - 1].compare_exchange_strong(previous, prev_new)) {
                 if(deque.nodes[k].compare_exchange_strong(current, cur_new)) {
@@ -111,9 +111,9 @@ void right_push(bounded_deque_t &deque, int *elt, int &stat) {
     }
 }
 
-int *right_pop(bounded_deque_t &deque, int &stat) {
+int *right_pop(deque_t &deque, int &stat) {
     unsigned long int k;
-    bounded_deque_node_t current, next;
+    deque_node_t current, next;
     
     while(1) {
         k = oracle(deque, RIGHT);
@@ -127,9 +127,9 @@ int *right_pop(bounded_deque_t &deque, int &stat) {
                 return NULL;
             }
             
-            bounded_deque_node_t cur_new, next_new;
-            set_bounded_deque_node(cur_new, RNULL, current.count);
-            set_bounded_deque_node(next_new, RNULL, next.count);
+            deque_node_t cur_new, next_new;
+            set_deque_node(cur_new, RNULL, current.count);
+            set_deque_node(next_new, RNULL, next.count);
             
             if(deque.nodes[k].compare_exchange_strong(next, next_new)) {
                 if(deque.nodes[k - 1].compare_exchange_strong(current, cur_new)) {
@@ -144,9 +144,9 @@ int *right_pop(bounded_deque_t &deque, int &stat) {
     }
 }
 
-unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
+unsigned long int oracle(deque_t &deque, oracle_end deque_end) {
     unsigned long int i, k;
-    bounded_deque_node_t current, previous;
+    deque_node_t current, previous;
     
     if(deque_end == LEFT) {
         k = deque.left_hint.load();
@@ -189,56 +189,82 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
     }
 }
 
-void init_bounded_deque_node(atomic_deque_node_t &node, int *init_null) {
-    bounded_deque_node_t blank_node;
+void init_deque_node(atomic_deque_node_t &node, int *init_null) {
+    deque_node_t blank_node;
     blank_node.value = init_null;
     blank_node.count = 0;
     node.store(blank_node);
 }
 
-void init_bounded_deque(bounded_deque_t &deque) {
+void init_deque(deque_t &deque) {
     int i;
+    atomic_deque_node_t *buffer;
+    deque_hint_t left_hint, right_hint;
+    
+    buffer = (atomic_deque_node_t *) malloc(DEF_BOUNDS * sizeof(atomic_deque_node_t));
     
     for(i = 0; i < DEF_BOUNDS; i++) {
         if(i < DEF_BOUNDS / 2)
-            init_bounded_deque_node(deque.nodes[i], LNULL);
+            init_deque_node(buffer[i], LNULL);
         else 
-            init_bounded_deque_node(deque.nodes[i], RNULL);
+            init_deque_node(buffer[i], RNULL);
     }
     
     deque.size = 0;
-    deque.left_hint = DEF_BOUNDS / 2 - 1;
-    deque.right_hint = DEF_BOUNDS / 2;
+    set_deque_hint(left_hint, buffer, DEF_BOUNDS / 2 - 1);
+    set_deque_hint(right_hint, buffer, DEF_BOUNDS / 2);
+    deque.left_hint.store(left_hint);
+    deque.right_hint.store(right_hint);
 }
 
-void clear_bounded_deque_node(atomic_deque_node_t &node) {
-    bounded_deque_node_t blank_node, old_node;
+void clear_deque_node(atomic_deque_node_t &node) {
+    deque_node_t blank_node, old_node;
     blank_node.value = NULL;
     blank_node.count = 0;
     old_node = node.exchange(blank_node);
 }
 
-void clear_bounded_deque(bounded_deque_t &deque) {
+void clear_deque(deque_t &deque) {
     int i;
+    bool left_check;
+    atomic_deque_node_t *buffer, *left_next, *right_next;
+    deque_hint_t left_hint, right_hint;
     
-    for(i = 0; i < DEF_BOUNDS; i++) {
+    buffer = deque.left_hint.load().nodes;
+    left_next = (atomic_deque_node_t *) buffer[0].load().value;
+    right_next = (atomic_deque_node_t *) buffer[DEF_BOUNDS - 1].load().value;
+    
+    for(i = 1; i < DEF_BOUNDS - 1; i++) {
         if(i < DEF_BOUNDS / 2)
-            init_bounded_deque_node(deque.nodes[i], LNULL);
+            init_deque_node(deque.nodes[i], LNULL);
         else 
-            init_bounded_deque_node(deque.nodes[i], RNULL);
+            init_deque_node(deque.nodes[i], RNULL);
     }
     
+    left_check = !is_null(left_next);
+    while(!is_null(left_next) && !is_null(right_next)) {
+        if(left_check) {
+            buffer = deque.left_hint.load().nodes;
+            left_next = (atomic_deque_node_t *) buffer[0].load().value;
+            // TODO: keep goin'
+        } else {
+            
+        }
+    }
+
     deque.size = 0;
-    deque.left_hint = DEF_BOUNDS / 2 - 1;
-    deque.right_hint = DEF_BOUNDS / 2;
+    set_deque_hint(left_hint, buffer, DEF_BOUNDS / 2 - 1);
+    set_deque_hint(right_hint, buffer, DEF_BOUNDS / 2);
+    deque.left_hint.store(left_hint);
+    deque.right_hint.store(right_hint);
 }
 
-void set_bounded_deque_node(bounded_deque_node_t &node, int *value, unsigned int last_count) {
+void set_deque_node(deque_node_t &node, int *value, unsigned int last_count) {
     node.value = value;
     node.count = last_count + 1;
 }
 
-void copy_bounded_deque_node(bounded_deque_node_t &new_node, bounded_deque_node_t &old_node) {
+void copy_deque_node(deque_node_t &new_node, deque_node_t &old_node) {
     new_node.value = old_node.value;
     new_node.count = old_node.count + 1;
 }
