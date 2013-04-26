@@ -35,7 +35,7 @@ void left_push(bounded_deque_t &deque, int *elt, int &stat) {
             if(deque.nodes[k + 1].compare_exchange_strong(previous, prev_new)) {
                 if(deque.nodes[k].compare_exchange_strong(current, cur_new)) {
                     // update loc hint
-                    deque.left_hint.compare_exchange_strong(k, k - 1);
+                    deque.left_hint--;
                     deque.size++;
                     stat = OK;
                     return;
@@ -68,7 +68,7 @@ int *left_pop(bounded_deque_t &deque, int &stat) {
             if(deque.nodes[k].compare_exchange_strong(next, next_new)) {
                 if(deque.nodes[k + 1].compare_exchange_strong(current, cur_new)) {
                     // update loc hint
-                    deque.left_hint.compare_exchange_strong(k, k + 1);
+                    deque.left_hint++;
                     deque.size--;
                     stat = OK;
                     return current.value;
@@ -101,7 +101,7 @@ void right_push(bounded_deque_t &deque, int *elt, int &stat) {
             if(deque.nodes[k - 1].compare_exchange_strong(previous, prev_new)) {
                 if(deque.nodes[k].compare_exchange_strong(current, cur_new)) {
                     // update loc hint
-                    deque.right_hint.compare_exchange_strong(k, k + 1);
+                    deque.right_hint++;
                     deque.size++;
                     stat = OK;
                     return;
@@ -134,7 +134,7 @@ int *right_pop(bounded_deque_t &deque, int &stat) {
             if(deque.nodes[k].compare_exchange_strong(next, next_new)) {
                 if(deque.nodes[k - 1].compare_exchange_strong(current, cur_new)) {
                     // update loc hint
-                    deque.right_hint.compare_exchange_strong(k, k - 1);
+                    deque.right_hint--;
                     deque.size--;
                     stat = OK;
                     return current.value;
@@ -155,12 +155,28 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
         
         if(current.value == LNULL && previous.value != LNULL) {
             return k;
-        } else {
-            for(k = 0; k < DEF_BOUNDS - 1; k++) {
+        } else if(current.value == LNULL && previous.value == LNULL) {
+            // go right
+            for(k = deque.left_hint.load(); k < DEF_BOUNDS - 1; k++) {
                 current = deque.nodes[k].load();
                 previous = deque.nodes[k + 1].load();
                 if(current.value == LNULL && previous.value != LNULL)
                     return k;
+                // break if condition was ruined
+                //if(current.value != LNULL)
+                    //break;
+            }
+            return deque.left_hint.load();
+        } else {
+            // go left
+            for(k = deque.left_hint.load(); k >= 0; k--) {
+                current = deque.nodes[k].load();
+                previous = deque.nodes[k + 1].load();
+                if(current.value == LNULL && previous.value != LNULL)
+                    return k;
+                // break if condition was ruined
+                //else if(current.value == LNULL)
+                    //break;
             }
             return deque.left_hint.load();
         }
@@ -171,15 +187,31 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
         
         if(current.value == RNULL && previous.value != RNULL) {
             return k;
-        } else {
-            for(k = DEF_BOUNDS - 1; k > 0; k--) {
+        } else if(current.value == RNULL && previous.value == RNULL) {
+            // go left
+            for(k = deque.right_hint.load(); k > 0; k--) {
                 current = deque.nodes[k].load();
                 previous = deque.nodes[k - 1].load();
                 if(current.value == RNULL && previous.value != RNULL)
                     return k;
+                // break if condition was ruined
+                //if(current.value != RNULL)
+                    //break;
             }
             return deque.right_hint.load();
-        }        
+        } else {
+            // go right
+            for(k = deque.right_hint.load(); k <= DEF_BOUNDS - 1; k++) {
+                current = deque.nodes[k].load();
+                previous = deque.nodes[k - 1].load();
+                if(current.value == RNULL && previous.value != RNULL)
+                    return k;
+                // break if condition was ruined
+                //else if(current.value == RNULL)
+                    //break;
+            }
+            return deque.right_hint.load();
+        }
     }
 }
 
