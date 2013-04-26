@@ -12,8 +12,8 @@
 #include "spec.h"
 #include "stress.h"
 
-#define THREAD_COUNT 20
-#define FREEZE_COUNT 1000
+#define THREAD_COUNT 50
+#define FREEZE_COUNT 10000
 #define N_TRIES      100
 
 using namespace std;
@@ -147,6 +147,11 @@ bool is_consistent(bounded_deque_t &deque, int &status_code) {
     int actual_size = 0;
     unsigned long long int expected_size = 0;
     for(i = 0; i < THREAD_COUNT; i++) {
+        /*fprintf(stdout, "\t\tThread %d ops:\n", i);
+        fprintf(stdout, "\t\t\tleft_pushes: %lu\n", stats[i].left_pushes);
+        fprintf(stdout, "\t\t\tleft_pops: %lu\n", stats[i].left_pops);
+        fprintf(stdout, "\t\t\tright_pushes: %lu\n", stats[i].right_pushes);
+        fprintf(stdout, "\t\t\tright_pops: %lu\n", stats[i].right_pops);*/
         expected_size += (stats[i].left_pushes + stats[i].right_pushes);
         expected_size -= (stats[i].left_pops + stats[i].right_pops);
     }
