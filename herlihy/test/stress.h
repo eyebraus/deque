@@ -2,10 +2,10 @@
 #include <pthread.h>
 
 typedef struct thread_stats_struct {
-    unsigned long long int left_pushes;
-    unsigned long long int right_pushes;
-    unsigned long long int left_pops;
-    unsigned long long int right_pops;
+    atomic_ullong left_pushes;
+    atomic_ullong right_pushes;
+    atomic_ullong left_pops;
+    atomic_ullong right_pops;
 } thread_stats_t;
 
 typedef struct thread_args_struct {

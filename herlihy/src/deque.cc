@@ -146,7 +146,7 @@ int *right_pop(bounded_deque_t &deque, int &stat) {
 
 unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
     unsigned long int i, k;
-    bounded_deque_node_t current, previous;
+    bounded_deque_node_t current, previous, next;
     
     if(deque_end == LEFT) {
         k = deque.left_hint.load();
@@ -180,7 +180,7 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
                 current = deque.nodes[i].load();
                 previous = deque.nodes[i - 1].load();
                 if(current.value == RNULL && previous.value != RNULL)
-                    return k;
+                    return i;
             }
             return deque.right_hint.load();
         } else {
