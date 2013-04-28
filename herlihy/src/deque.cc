@@ -169,8 +169,10 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
             for(i = k + 1; i > 0; i--) {
                 current = deque.nodes[i].load();
                 next = deque.nodes[i - 1].load();
-                if(current.value == LNULL && previous.value != LNULL)
+                if(next.value == LNULL && current.value != LNULL)
                     return i - 1;
+                if(next.value != LNULL && current.value != LNULL)
+                    break;
             }
             return deque.left_hint.load();
         } else {
@@ -197,8 +199,10 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
             for(i = k - 1; i < DEF_BOUNDS - 1; i++) {
                 current = deque.nodes[i].load();
                 next = deque.nodes[i + 1].load();
-                if(current.value == RNULL && previous.value != RNULL)
+                if(next.value == RNULL && current.value != RNULL)
                     return i + 1;
+                if(next.value != RNULL && current.value != RNULL)
+                    break;
             }
             return deque.right_hint.load();
         } else {

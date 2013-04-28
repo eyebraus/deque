@@ -144,7 +144,7 @@ bool is_consistent(bounded_deque_t &deque, int &status_code) {
     }
     
     // second scan: # of elements gels with # of ops
-    int actual_size = 0;
+    unsigned long long int actual_size = 0;
     unsigned long long int expected_size = 0;
     for(i = 0; i < THREAD_COUNT; i++) {
         /*fprintf(stdout, "\t\tThread %d ops:\n", i);
@@ -160,12 +160,14 @@ bool is_consistent(bounded_deque_t &deque, int &status_code) {
         if(!is_null(current.value))
             actual_size++;
     }
-    if(actual_size > (int) expected_size) {
+    if(actual_size > expected_size) {
         status_code = LOST_OPS;
+        fprintf(stderr, "\t\tActual: %llu, Expected: %llu\n", actual_size, expected_size);
         return false;
     }
-    if(actual_size < (int) expected_size) {
+    if(actual_size < expected_size) {
         status_code = EXTRA_OPS;
+        fprintf(stderr, "\t\tActual: %llu, Expected: %llu\n", actual_size, expected_size);
         return false;
     }
     
@@ -224,7 +226,7 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "\t\t\twtf is going on?\n");
                     exit(0);
             }
-            exit(err_stat);
+            exit(0);
         } else {
             fprintf(stdout, "\t\tDeque was consistent, current state:\n");
             fprintf(stdout, "\t\t\tsize: %lu\n", test_deque.size.load());
