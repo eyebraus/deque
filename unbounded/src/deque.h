@@ -1,8 +1,8 @@
 
 #include <atomic>
 
-#define LNULL (int *) 0b01
-#define RNULL (int *) 0b10
+#define LNULL (void *) 0b01
+#define RNULL (void *) 0b10
 #define DEF_BOUNDS 32
 
 using namespace std;
@@ -57,14 +57,16 @@ void left_push(deque_t &deque, int *elt, int &stat);
 int *left_pop(deque_t &deque, int &stat);
 void right_push(deque_t &deque, int *elt, int &stat);
 int *right_pop(deque_t &deque, int &stat);
-unsigned long int oracle(deque_t &deque, oracle_end deque_end);
+deque_hint_t oracle(deque_t &deque, oracle_end deque_end);
 
 // various helpers
 void init_deque_node(atomic_deque_node_t &node);
 void init_deque(deque_t &deque);
+void init_buffer(atomic_deque_node_t *buffer, int size);
 void clear_deque_node(deque_node_t &node);
 void clear_deque(deque_t &deque);
-void set_deque_node(deque_node_t &node, int *value, unsigned int last_count);
+void clear_buffer(atomic_deque_node_t *buffer, int size);
+void set_deque_node(deque_node_t &node, void *value, unsigned int last_count);
 void copy_deque_node(deque_node_t &new_node, deque_node_t &old_node);
 void set_deque_hint(deque_hint_t &hint, atomic_deque_node_t *nodes, long int index);
 void copy_deque_hint(deque_hint_t &new_hint, deque_hint_t &old_hint);
