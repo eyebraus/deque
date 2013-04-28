@@ -301,48 +301,81 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
         current = buffer[k.index % DEF_BOUNDS].load();
         previous = buffer[(k.index + 1) % DEF_BOUNDS].load();
         
-        /*
-         * cases:
-         *     current == LNULL and previous == RNULL
-         *         position found
-         *     current == LNULL and previous index == edge
-         *         move to next buffer
-         *     current == LNULL and previous == LNULL
-         *         go right
-         *     current != LNULL and previous != LNULL
-         *         go left
-         *     else
-         *         wtf, just return hint
-         */ 
-        // TODO: implement this shit yo
-        
         if(current.value == LNULL && previous.value != LNULL) {
             return k;
-        } else if(current.value == LNULL && previous.value == LNULL) {
+        } else if(previous.value == LNULL) {
             // go right
             while((void *) buffer != RNULL) {
                 for(i = start; i < DEF_BOUNDS - 1; i++) {
-                    current = deque.nodes[i].load();
-                    previous = deque.nodes[i + 1].load();
-                    if(current.value == LNULL && previous.value == RNULL)
+                    current = buffer[i].load();
+                    previous = buffer[i + 1].load();
+                    if(current.value == LNULL && previous.value != LNULL)
                         return i;
                 }
+                // move on to next buffer
+                buffer = (atomic_deque_node_t *) buffer[DEF_BOUNDS - 1].load().value;
+                start = 0;
             }
             return deque.left_hint.load();
-        } else if(current.value != LNULL && previous.value != LNULL) {
+        } else if(current.value != LNULL) {
             // go left
-            for(i = k + 1; i > 0; i--) {
-                current = deque.nodes[i].load();
-                next = deque.nodes[i - 1].load();
-                if(current.value == LNULL && previous.value != LNULL)
-                    return i - 1;
+            bool world_flip = false;
+            while((void *) buffer != LNULL && !world_flip) {
+                for(i = start + 1; i > 0; i--) {
+                    current = buffer[i].load();
+                    next = buffer[i - 1].load();
+                    if(next.value == LNULL && current.value != LNULL)
+                        return i - 1;
+                }
+                // move on to next buffer
+                buffer = (atomic_deque_node_t *) buffer[0].load().value;
+                start = DEF_BOUNDS - 1;
             }
             return deque.left_hint.load();
         } else {
             return deque.left_hint.load();
         }
     } else if(deque_end == RIGHT) {
+        k = deque.right_hint.load();
+        buffer = k.nodes;
+        start = k.index % DEF_BOUNDS;
+        current = buffer[k.index % DEF_BOUNDS].load();
+        previous = buffer[(k.index - 1) % DEF_BOUNDS].load();
         
+        if(current.value == RNULL && previous.value != RNULL) {
+            return k;
+        } else if(previous.value == RNULL) {
+            // go left
+            while((void *) buffer != LNULL) {
+                for(i = start; i > 0; i--) {
+                    current = buffer[i].load();
+                    previous = buffer[i - 1].load();
+                    if(current.value == RNULL && previous.value != RNULL)
+                        return i;
+                }
+                // move on to next buffer
+                buffer = (atomic_deque_node_t *) buffer[0].load().value;
+                start = DEF_BOUNDS - 1;
+            }
+            return deque.right_hint.load();
+        } else if(current.value != LNULL) {
+            // go right
+            bool world_flip = false;
+            while((void *) buffer != RNULL && !world_flip) {
+                for(i = start - 1; i > 0; i--) {
+                    current = buffer[i].load();
+                    next = buffer[i + 1].load();
+                    if(next.value == RNULL && current.value != RNULL)
+                        return i + 1;
+                }
+                // move on to next buffer
+                buffer = (atomic_deque_node_t *) buffer[DEF_BOUNDS - 1].load().value;
+                start = 0;
+            }
+            return deque.right_hint.load();
+        } else {
+            return deque.right_hint.load();
+        }
     }
 }
 
