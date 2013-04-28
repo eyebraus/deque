@@ -78,21 +78,58 @@ void left_push(deque_t &deque, int *elt, int &stat) {
 }
 
 int *left_pop(deque_t &deque, int &stat) {
-    unsigned long int k;
+    deque_hint_t k;
     deque_node_t current, next;
     
     while(1) {
         k = oracle(deque, LEFT);
-        current = deque.nodes[(k.index + 1) % DEF_BOUNDS].load();
-        next = deque.nodes[k.index % DEF_BOUNDS].load();
+        current = k.nodes[(k.index + 1) % DEF_BOUNDS].load();
+        next = k.nodes[k.index % DEF_BOUNDS].load();
         
         if(current.value != LNULL && next.value == LNULL) {
             deque_node_t cur_new, next_new;
             
-            if(k.index % DEF_BOUNDS == DEF_BOUNDS - 1) {
-                // edge buffer: attempt to reclaim
-                // HAZARD POINTERS AND SHIT!!!
+            if(current.value != RNULL && (k.index + 1) % DEF_BOUNDS == DEF_BOUNDS - 1) {
+                // cleanup case: try to detach and reclaim buffer
+                // TODO: hazard pointers
+                atomic_deque_node_t *next_right;
+                deque_node_t right_ptr_new, left_ptr_new, left_ptr_old, left_peek;
+                
+                // set sail for right neighbor!
+                next_right = (atomic_deque_node_t *) k.nodes[(k.index + 1) % DEF_BOUNDS].load().value;
+                left_ptr_old = next_right[(k.index + 2) % DEF_BOUNDS].load();
+                // NOTE: might want to check if left_ptr_old still points to this buffer
+                left_peek = next_right[(k.index + 3) % DEF_BOUNDS].load();
+                // empty if peek val is null
+                if(left_peek.value == RNULL && compare_val(next_right[(k.index + 3) % DEF_BOUNDS], left_peek)) {
+                    stat = EMPTY;
+                    return NULL;
+                }
+                
+                // attempt to detach
+                set_deque_node(next_new, LNULL, next.count);
+                set_deque_node(left_ptr_new, LNULL, left_ptr_old.count);
+                // ASSUMPTION! we don't care that the right pointer can change
+                // if it points to a new buffer, then next would have had to
+                // change as well
+                set_deque_node(cur_new, RNULL, cur_new.count);
+                
+                if(k.nodes[k.index % DEF_BOUNDS].compare_exchange_strong(next, next_new)) {
+                    if(next_right[(k.index + 2) % DEF_BOUNDS].compare_exchange_strong(left_ptr_old, left_ptr_new)) {
+                        // update loc hint
+                        deque_hint_t new_hint;
+                        set_deque_hint(new_hint, right_next, k.index + 1);
+                        deque.left_hint.compare_exchange_strong(k, new_hint);
+                        k.nodes[(k.index + 1) % DEF_BOUNDS].store(cur_new);
+                        // TODO: mark as reclaimable!!!
+                    }
+                }
             } else {
+                if(current.value == RNULL && compare_val(k.nodes[(k.index + 1) % DEF_BOUNDS], current)) {
+                    stat = EMPTY;
+                    return NULL;
+                }
+                
                 // otherwise, do the normal swap op
                 set_deque_node(cur_new, LNULL, current.count);
                 set_deque_node(next_new, LNULL, next.count);
@@ -105,7 +142,7 @@ int *left_pop(deque_t &deque, int &stat) {
                         deque.left_hint.compare_exchange_strong(k, new_hint);
                         deque.size--;
                         stat = OK;
-                        return current.value;
+                        return (int *) current.value;
                     }
                 }
             }
@@ -114,32 +151,64 @@ int *left_pop(deque_t &deque, int &stat) {
 }
 
 void right_push(deque_t &deque, int *elt, int &stat) {
-    unsigned long int k;
+    deque_hint_t k;
     deque_node_t previous, current;
     
     while(1) {
         k = oracle(deque, RIGHT);
-        //k = deque.right_hint.load();
-        previous = deque.nodes[k - 1].load();
-        current = deque.nodes[k].load();
+        // NOTE: checking for k.node safety is left up to oracle
+        previous = k.nodes[(k.index - 1) % DEF_BOUNDS].load();
+        current = k.nodes[k.index % DEF_BOUNDS].load();
         
         if(previous.value != RNULL && current.value == RNULL) {
-            if(k >= DEF_BOUNDS - 1) {
-                stat = FULL;
-                return;
-            }
-
             deque_node_t prev_new, cur_new;
-            copy_deque_node(prev_new, previous);
-            set_deque_node(cur_new, (void *) elt, current.count);
             
-            if(deque.nodes[k - 1].compare_exchange_strong(previous, prev_new)) {
-                if(deque.nodes[k].compare_exchange_strong(current, cur_new)) {
-                    // update loc hint
-                    deque.right_hint++;
-                    deque.size++;
-                    stat = OK;
-                    return;
+            if(k.index % DEF_BOUNDS == DEF_BOUNDS - 1) {
+                atomic_deque_node_t *buffer;
+                deque_node_t left_edge, value_node;
+                
+                // buffer edge: allocate new buffer, attempt to attach
+                buffer = (atomic_deque_node_t *) malloc(DEF_BOUNDS * sizeof(atomic_deque_node_t));
+                init_buffer(buffer, DEF_BOUNDS);
+                // set edge pointer & contents
+                set_deque_node(left_edge, (void *) k.nodes, 0);
+                set_deque_node(value_node, (void *) elt, 0);
+                buffer[0].store(right_edge);
+                buffer[1].store(value_node);
+                
+                // normal swapping case
+                copy_deque_node(prev_new, previous);
+                set_deque_node(cur_new, (void *) buffer, current.count);
+                
+                if(k.nodes[(k.index - 1) % DEF_BOUNDS].compare_exchange_strong(previous, prev_new)) {
+                    if(k.nodes[k.index % DEF_BOUNDS].compare_exchange_strong(current, cur_new)) {
+                        // update loc hint
+                        deque_hint_t new_hint;
+                        set_deque_hint(new_hint, buffer, k.index + 3);
+                        deque.right_hint.compare_exchange_strong(k, new_hint);
+                        deque.size++;
+                        stat = OK;
+                        return;
+                    } else {
+                        // make sure to free unused buffer!
+                        free(buffer);
+                    }
+                }
+            } else {
+                // otherwise do the normal swapping case
+                copy_deque_node(prev_new, previous);
+                set_deque_node(cur_new, (void *) elt, current.count);
+                
+                if(k.nodes[(k.index - 1) % DEF_BOUNDS].compare_exchange_strong(previous, prev_new)) {
+                    if(k.nodes[k.index % DEF_BOUNDS].compare_exchange_strong(current, cur_new)) {
+                        // update loc hint
+                        deque_hint_t new_hint;
+                        set_deque_hint(new_hint, k.nodes, k.index + 1);
+                        deque.right_hint.compare_exchange_strong(k, new_hint);
+                        deque.size++;
+                        stat = OK;
+                        return;
+                    }
                 }
             }
         }
@@ -147,80 +216,133 @@ void right_push(deque_t &deque, int *elt, int &stat) {
 }
 
 int *right_pop(deque_t &deque, int &stat) {
-    unsigned long int k;
+    deque_hint_t k;
     deque_node_t current, next;
     
     while(1) {
         k = oracle(deque, RIGHT);
-        //k = deque.right_hint.load();
-        current = deque.nodes[k - 1].load();
-        next = deque.nodes[k].load();
+        current = k.nodes[(k.index - 1) % DEF_BOUNDS].load();
+        next = k.nodes[k.index % DEF_BOUNDS].load();
         
         if(current.value != RNULL && next.value == RNULL) {
-            if(current.value == LNULL && compare_node(deque.nodes[k - 1], current)) {
-                stat = EMPTY;
-                return NULL;
-            }
-            
             deque_node_t cur_new, next_new;
-            set_deque_node(cur_new, RNULL, current.count);
-            set_deque_node(next_new, RNULL, next.count);
             
-            if(deque.nodes[k].compare_exchange_strong(next, next_new)) {
-                if(deque.nodes[k - 1].compare_exchange_strong(current, cur_new)) {
-                    // update loc hint
-                    deque.right_hint--;
-                    deque.size--;
-                    stat = OK;
-                    return current.value;
+            if(current.value != RNULL && (k.index - 1) % DEF_BOUNDS == 0) {
+                // cleanup case: try to detach and reclaim buffer
+                // TODO: hazard pointers
+                atomic_deque_node_t *next_left;
+                deque_node_t left_ptr_new, right_ptr_new, right_ptr_old, right_peek;
+                
+                // set sail for right neighbor!
+                next_left = (atomic_deque_node_t *) k.nodes[(k.index + 1) % DEF_BOUNDS].load().value;
+                right_ptr_old = next_left[(k.index - 2) % DEF_BOUNDS].load();
+                // NOTE: might want to check if left_ptr_old still points to this buffer
+                right_peek = next_left[(k.index - 3) % DEF_BOUNDS].load();
+                // empty if peek val is null
+                if(right_peek.value == LNULL && compare_val(next_right[(k.index - 3) % DEF_BOUNDS], right_peek)) {
+                    stat = EMPTY;
+                    return NULL;
+                }
+                
+                // attempt to detach
+                set_deque_node(next_new, RNULL, next.count);
+                set_deque_node(right_ptr_new, RNULL, right_ptr_old.count);
+                // ASSUMPTION! we don't care that the right pointer can change
+                // if it points to a new buffer, then next would have had to
+                // change as well
+                set_deque_node(cur_new, LNULL, cur_new.count);
+                
+                if(k.nodes[k.index % DEF_BOUNDS].compare_exchange_strong(next, next_new)) {
+                    if(next_right[(k.index - 2) % DEF_BOUNDS].compare_exchange_strong(right_ptr_old, right_ptr_new)) {
+                        // update loc hint
+                        deque_hint_t new_hint;
+                        set_deque_hint(new_hint, left_next, k.index - 1);
+                        deque.right_hint.compare_exchange_strong(k, new_hint);
+                        k.nodes[(k.index - 1) % DEF_BOUNDS].store(cur_new);
+                        // TODO: mark as reclaimable!!!
+                    }
+                }
+            } else {
+                if(current.value == LNULL && compare_val(k.nodes[(k.index - 1) % DEF_BOUNDS], current)) {
+                    stat = EMPTY;
+                    return NULL;
+                }
+                
+                // otherwise, do the normal swap op
+                set_deque_node(cur_new, RNULL, current.count);
+                set_deque_node(next_new, RNULL, next.count);
+                
+                if(k.nodes[k.index % DEF_BOUNDS].compare_exchange_strong(next, next_new)) {
+                    if(k.nodes[(k.index - 1) % DEF_BOUNDS].compare_exchange_strong(current, cur_new)) {
+                        // update loc hint
+                        deque_hint_t new_hint;
+                        set_deque_hint(new_hint, k.nodes, k.index - 1);
+                        deque.right_hint.compare_exchange_strong(k, new_hint);
+                        deque.size--;
+                        stat = OK;
+                        return (int *) current.value;
+                    }
                 }
             }
         }
     }
 }
 
-deque_hint_t oracle(deque_t &deque, oracle_end deque_end) {
-    unsigned long int i, k;
-    deque_node_t current, previous;
+unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
+    deque_hint_t k;
+    long int i, start;
+    atomic_deque_node_t *buffer;
+    bounded_deque_node_t current, previous, next;
     
     if(deque_end == LEFT) {
         k = deque.left_hint.load();
-        current = deque.nodes[k].load();
-        previous = deque.nodes[k + 1].load();
+        buffer = k.nodes;
+        start = k.index % DEF_BOUNDS;
+        current = buffer[k.index % DEF_BOUNDS].load();
+        previous = buffer[(k.index + 1) % DEF_BOUNDS].load();
+        
+        /*
+         * cases:
+         *     current == LNULL and previous == RNULL
+         *         position found
+         *     current == LNULL and previous index == edge
+         *         move to next buffer
+         *     current == LNULL and previous == LNULL
+         *         go right
+         *     current != LNULL and previous != LNULL
+         *         go left
+         *     else
+         *         wtf, just return hint
+         */ 
+        // TODO: implement this shit yo
         
         if(current.value == LNULL && previous.value != LNULL) {
             return k;
         } else if(current.value == LNULL && previous.value == LNULL) {
             // go right
-            for(i = k; i < DEF_BOUNDS - 1; i++) {
+            while((void *) buffer != RNULL) {
+                for(i = start; i < DEF_BOUNDS - 1; i++) {
+                    current = deque.nodes[i].load();
+                    previous = deque.nodes[i + 1].load();
+                    if(current.value == LNULL && previous.value == RNULL)
+                        return i;
+                }
+            }
+            return deque.left_hint.load();
+        } else if(current.value != LNULL && previous.value != LNULL) {
+            // go left
+            for(i = k + 1; i > 0; i--) {
                 current = deque.nodes[i].load();
-                previous = deque.nodes[i + 1].load();
+                next = deque.nodes[i - 1].load();
                 if(current.value == LNULL && previous.value != LNULL)
-                    return i;
+                    return i - 1;
             }
             return deque.left_hint.load();
         } else {
             return deque.left_hint.load();
         }
     } else if(deque_end == RIGHT) {
-        k = deque.right_hint.load();
-        current = deque.nodes[k].load();
-        previous = deque.nodes[k - 1].load();
         
-        if(current.value == RNULL && previous.value != RNULL) {
-            return k;
-        } else if(current.value == RNULL && previous.value == RNULL) {
-            // go left
-            for(i = k; i > 0; i--) {
-                current = deque.nodes[i].load();
-                previous = deque.nodes[i - 1].load();
-                if(current.value == RNULL && previous.value != RNULL)
-                    return k;
-            }
-            return deque.right_hint.load();
-        } else {
-            return deque.right_hint.load();
-        }
     }
 }
 
