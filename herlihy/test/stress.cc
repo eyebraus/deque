@@ -33,10 +33,11 @@ pthread_t threads[THREAD_COUNT];
 thread_args_t args[THREAD_COUNT];
 thread_stats_t stats[THREAD_COUNT];
 pthread_barrier_t barrier;
+unsigned long long last_size;
 
 void *rand_ops(void *args_void) {
     default_random_engine rand_engine(chrono::system_clock::now().time_since_epoch().count());
-    uniform_real_distribution<double> value_dist(0.0, 65536.0);
+    uniform_real_distribution<double> value_dist(4.0, 65536.0);
     uniform_real_distribution<double> op_dist(0.0, 1.0);
     vector<int *> free_list;
     vector<int *>::iterator vi;
@@ -78,11 +79,15 @@ void *rand_ops(void *args_void) {
                 int *popped_value;
                 if(random_op < 0.75) {
                     popped_value = left_pop(test_deque, op_status);
-                    if(op_status == OK)
+                    if(op_status == OK && is_null(popped_value))
+                        fprintf(stderr, "\t\t\twtf is going on???? returned %p\n", popped_value);
+                    else if(op_status == OK)
                         stats[id].left_pops++;
                 } else {
                     popped_value = right_pop(test_deque, op_status);
-                    if(op_status == OK)
+                    if(op_status == OK && is_null(popped_value))
+                        fprintf(stderr, "\t\t\twtf is going on???? returned %p\n", popped_value);
+                    else if(op_status == OK)
                         stats[id].right_pops++;
                 }
             }
@@ -94,6 +99,11 @@ void *rand_ops(void *args_void) {
         for(vi = free_list.begin(); vi != free_list.end(); vi++)
             free(*vi);
         free_list.clear();
+        // reset counts
+        stats[id].left_pushes = 0;
+        stats[id].left_pops = 0;
+        stats[id].right_pushes = 0;
+        stats[id].right_pops = 0;
     }
 
     pthread_exit(NULL);
@@ -145,15 +155,15 @@ bool is_consistent(bounded_deque_t &deque, int &status_code) {
     
     // second scan: # of elements gels with # of ops
     unsigned long long int actual_size = 0;
-    unsigned long long int expected_size = 0;
+    unsigned long long int expected_size = last_size;
     for(i = 0; i < THREAD_COUNT; i++) {
         /*fprintf(stdout, "\t\tThread %d ops:\n", i);
         fprintf(stdout, "\t\t\tleft_pushes: %lu\n", stats[i].left_pushes);
         fprintf(stdout, "\t\t\tleft_pops: %lu\n", stats[i].left_pops);
         fprintf(stdout, "\t\t\tright_pushes: %lu\n", stats[i].right_pushes);
         fprintf(stdout, "\t\t\tright_pops: %lu\n", stats[i].right_pops);*/
-        expected_size += (stats[i].left_pushes + stats[i].right_pushes);
-        expected_size -= (stats[i].left_pops + stats[i].right_pops);
+        expected_size += (stats[i].left_pushes.load() + stats[i].right_pushes.load());
+        expected_size -= (stats[i].left_pops.load() + stats[i].right_pops.load());
     }
     for(i = 0; i < DEF_BOUNDS; i++) {
         bounded_deque_node_t current = deque.nodes[i].load();
@@ -172,6 +182,7 @@ bool is_consistent(bounded_deque_t &deque, int &status_code) {
     }
     
     status_code = CONSISTENT;
+    last_size = actual_size;
     return true;
 }
 
@@ -182,6 +193,7 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "\tInitializing barrier and threads\n");
     // init everything
     init_bounded_deque(test_deque);
+    last_size = 0;
     init_pthread_barrier(barrier, THREAD_COUNT + 1);
     for(i = 0; i < THREAD_COUNT; i++) {
         init_thread_args(args[i], i);
@@ -226,6 +238,17 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "\t\t\twtf is going on?\n");
                     exit(0);
             }
+            fprintf(stdout, "\t\t\tsize: %lu\n", test_deque.size.load());
+            fprintf(stdout, "\t\t\tleft_hint: %lu\n", test_deque.left_hint.load());
+            fprintf(stdout, "\t\t\tright_hint: %lu\n", test_deque.right_hint.load());
+            if(test_deque.nodes[test_deque.left_hint.load()].load().value == LNULL)
+                fprintf(stdout, "\t\t\tleft_hint.value: LNULL\n");
+            else
+                fprintf(stdout, "\t\t\tleft_hint.value: %d\n", *(test_deque.nodes[test_deque.left_hint.load()].load().value));
+            if(test_deque.nodes[test_deque.right_hint.load()].load().value == RNULL)
+                fprintf(stdout, "\t\t\tright_hint.value: RNULL\n");
+            else
+                fprintf(stdout, "\t\t\tright_hint.value: %d\n", *(test_deque.nodes[test_deque.right_hint.load()].load().value));
             exit(0);
         } else {
             fprintf(stdout, "\t\tDeque was consistent, current state:\n");
