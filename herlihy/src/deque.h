@@ -50,6 +50,11 @@ static inline bool val_eql(bounded_deque_node_t &a, bounded_deque_node_t &b) {
     return a.value == b.value;
 }
 
+static inline bool compare_val(atomic_deque_node_t &a, bounded_deque_node_t &b) {
+    bounded_deque_node_t a_copy = a.load();
+    return a_copy.value == b.value;
+}
+
 /*
  * Function Prototypes
  */

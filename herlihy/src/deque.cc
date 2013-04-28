@@ -56,7 +56,7 @@ int *left_pop(bounded_deque_t &deque, int &stat) {
         next = deque.nodes[k].load();
         
         if(current.value != LNULL && next.value == LNULL) {
-            if(current.value == RNULL && compare_node(deque.nodes[k + 1], current)) {
+            if(current.value == RNULL && compare_val(deque.nodes[k + 1], current)) {
                 stat = EMPTY;
                 return NULL;
             }
@@ -122,7 +122,7 @@ int *right_pop(bounded_deque_t &deque, int &stat) {
         next = deque.nodes[k].load();
         
         if(current.value != RNULL && next.value == RNULL) {
-            if(current.value == LNULL && compare_node(deque.nodes[k - 1], current)) {
+            if(current.value == LNULL && compare_val(deque.nodes[k - 1], current)) {
                 stat = EMPTY;
                 return NULL;
             }
@@ -164,6 +164,15 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
                     return i;
             }
             return deque.left_hint.load();
+        } else if(current.value != LNULL && previous.value != LNULL) {
+            // go left
+            for(i = k + 1; i > 0; i--) {
+                current = deque.nodes[i].load();
+                next = deque.nodes[i - 1].load();
+                if(current.value == LNULL && previous.value != LNULL)
+                    return i - 1;
+            }
+            return deque.left_hint.load();
         } else {
             return deque.left_hint.load();
         }
@@ -181,6 +190,15 @@ unsigned long int oracle(bounded_deque_t &deque, oracle_end deque_end) {
                 previous = deque.nodes[i - 1].load();
                 if(current.value == RNULL && previous.value != RNULL)
                     return i;
+            }
+            return deque.right_hint.load();
+        } else if(current.value != RNULL && previous.value != RNULL) {
+            // go left
+            for(i = k - 1; i < DEF_BOUNDS - 1; i++) {
+                current = deque.nodes[i].load();
+                next = deque.nodes[i + 1].load();
+                if(current.value == RNULL && previous.value != RNULL)
+                    return i + 1;
             }
             return deque.right_hint.load();
         } else {
