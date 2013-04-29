@@ -34,6 +34,7 @@ typedef struct deque_struct {
 
 typedef enum { LEFT, RIGHT } oracle_end;
 typedef enum { OK, EMPTY, FULL } deque_state;
+typedef enum { SPLIT, LBUF, RBUF } buffer_fill;
 
 /*
  * Inline Functions ("macros")
@@ -44,8 +45,18 @@ static inline bool compare_node(atomic_deque_node_t &a, deque_node_t &b) {
     return a_copy.value == b.value && a_copy.count == b.count;
 }
 
-static inline bool is_null(int *v) {
+static inline bool compare_val(atomic_deque_node_t &a, deque_node_t &b) {
+    deque_node_t a_copy = a.load();
+    return a_copy.value == b.value;
+}
+
+static inline bool is_null(void *v) {
     return v == NULL || v == LNULL || v == RNULL;
+}
+
+// ACTUALLY do modular math...
+static inline long int mod(long int a, long int b) {
+    return (a % b + b) % b;
 }
 
 /*
@@ -62,7 +73,7 @@ deque_hint_t oracle(deque_t &deque, oracle_end deque_end);
 // various helpers
 void init_deque_node(atomic_deque_node_t &node);
 void init_deque(deque_t &deque);
-void init_buffer(atomic_deque_node_t *buffer, int size);
+void init_buffer(atomic_deque_node_t *buffer, int size, buffer_fill fill);
 void clear_deque_node(deque_node_t &node);
 void clear_deque(deque_t &deque);
 void clear_buffer(atomic_deque_node_t *buffer, int size);
