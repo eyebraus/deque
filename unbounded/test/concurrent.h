@@ -48,22 +48,13 @@ static inline void start_thread_pool(thread_pool_t &pool, void *(*proc)(void *),
     }
 }
 
-static inline spec_result_t *wait_on_thread_pool(thread_pool_t &pool) {
+static inline void **wait_on_thread_pool(thread_pool_t &pool) {
     int i;
     void *rvoid;
-    spec_result_t *results = (spec_result_t *) malloc(sizeof(spec_result_t) * pool.size);
-    spec_result_t *result;
+    void **results = (void **) malloc(sizeof(void *) * pool.size);
     for(i = 0; i < pool.size; i++) {
         wait_on_pthread(pool.threads[i], &rvoid);
-        result = (spec_result_t *) rvoid;
-        if(result != NULL) {
-            results[i].size = result->size;
-            results[i].results = result->results;
-            free(result);
-        } else {
-            results[i].size = 0;
-            results[i].results = NULL;
-        }
+        results[i] = rvoid;
     }
     return results;
 }
