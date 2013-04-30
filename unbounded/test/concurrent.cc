@@ -6,11 +6,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <vector>
 #include "../src/deque.h"
-#include "concurrent.h"
 #include "spec.h"
+#include "concurrent.h"
 
-#define THREAD_COUNT 16
+#define DEBUG 1
+#define THREAD_COUNT 32
 #define SPEC_COUNT 7
 
 using namespace std;
@@ -45,25 +47,45 @@ deque_t test_deque;
  *             - ends do not cross over
  */
 
+void *spec001_helper(void *args_void) {
+    int id = ((thread_args_t *) args_void)->id;
+    pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
+    //fprintf(stdout, "\t\tThread %d barrier %p\n", id, barrier);
+    int i, push_status;
+
+    wait_on_barrier(barrier);
+    int *push_value = (int *) malloc(sizeof(int));
+    *push_value = id + 1;
+    left_push(test_deque, push_value, push_status);
+    assert(push_status == OK);
+    wait_on_barrier(barrier);
+    
+    pthread_exit(NULL);
+}
+
 //     01. two thread pools push left 64 times in total
 int spec001() {
     int i;
     thread_pool_t pool1, pool2;
     thread_args_t targs1, targs2;
     pthread_barrier_t barrier;
-    spec_results_t *results1, *results2;
-    set<int> expected;
+    spec_result_t *results1, *results2;
+    set<int> expected, found;
+    set<int>::iterator set_iter;
+    vector<atomic_deque_node_t *> left_buffer_chain, right_buffer_chain;
+    vector<atomic_deque_node_t *>::iterator left_iter;
+    vector<atomic_deque_node_t *>::reverse_iterator right_iter;
     deque_hint_t left_hint, right_hint;
-    atomic_deque_node_t *left_buffer, *right_buffer;
-    long int left_head, right_head;
-    bool left_check, head_found, unreachable;
+    atomic_deque_node_t *left_buffer, *right_buffer, *last_buffer;
+    long int left_head, right_head, last_head;
+    bool left_check, right_check, head_found, unreachable;
     
     fprintf(stdout, "Spec %3d\n", 1);
-    for(i = 1; i <= 64; i++)
+    for(i = 1; i <= THREAD_COUNT * 2; i++)
         expected.insert(i);
     init_pthread_barrier(barrier, THREAD_COUNT * 2);
-    init_thread_pool(pool1, 0, THREAD_COUNT);
-    init_thread_pool(pool2, 1, THREAD_COUNT);
+    init_thread_pool(pool1, 1, THREAD_COUNT);
+    init_thread_pool(pool2, 2, THREAD_COUNT);
     init_thread_args(targs1, 1, &barrier);
     init_thread_args(targs2, 2, &barrier);
     start_thread_pool(pool1, &spec001_helper, targs1);
@@ -71,15 +93,41 @@ int spec001() {
     results1 = wait_on_thread_pool(pool1);
     results2 = wait_on_thread_pool(pool2);
     
-    //right_hint = test_deque.right_hint.load();
-    // actual heads are reachable from hints
+    // both hints see exactly the same buffer chain
     left_hint = test_deque.left_hint.load();
     left_buffer = left_hint.nodes;
     left_head = left_hint.index;
+    right_hint = test_deque.right_hint.load();
+    right_buffer = right_hint.nodes;
+    right_head = right_hint.index;
+    atomic_deque_node_t *iter = left_buffer;
+    while(iter[0].load().value != LNULL)
+        iter = (atomic_deque_node_t *) iter[0].load().value;
+    while(iter != (atomic_deque_node_t *) RNULL) {
+        left_buffer_chain.push_back(iter);
+        iter = (atomic_deque_node_t *) iter[DEF_BOUNDS - 1].load().value;
+    }
+    iter = right_buffer;
+    while(iter[DEF_BOUNDS - 1].load().value != RNULL)
+        iter = (atomic_deque_node_t *) iter[DEF_BOUNDS - 1].load().value;
+    while(iter != (atomic_deque_node_t *) LNULL) {
+        right_buffer_chain.push_back(iter);
+        iter = (atomic_deque_node_t *) iter[0].load().value;
+    }
+    left_iter = left_buffer_chain.begin();
+    right_iter = right_buffer_chain.rbegin();
+    while(left_iter != left_buffer_chain.end() && right_iter != right_buffer_chain.rend()) {
+        if(DEBUG) fprintf(stdout, "\tLeft chain: %p, right chain: %p\n", *left_iter, *right_iter);
+        assert(*left_iter == *right_iter);
+        left_iter++;
+        right_iter++;
+    }
+    
+    // actual heads are reachable from hints
     left_check = true;
     head_found = false;
     unreachable = false;
-    while(!head_found && !unreachable) {
+    while(!head_found) {
         if(left_check) {
             // check over the current buffer
             for(i = left_head; mod(i, DEF_BOUNDS) >= 0; i--) {
@@ -92,27 +140,504 @@ int spec001() {
                 }
             }
             // move to next buffer if possible
+            last_buffer = left_buffer;
+            last_head = left_head;
             left_buffer = (atomic_deque_node_t *) left_buffer[0].load().value;
-            left_head = 
+            left_head = i - 1;
+            // switch to right check if next ptr is null
+            if(left_buffer == LNULL)
+                left_check = false;
         } else {
-
+            // check over the current buffer
+            for(i = left_head; mod(i, DEF_BOUNDS) < DEF_BOUNDS - 1; i++) {
+                deque_node_t next, current;
+                current = left_buffer[mod(i, DEF_BOUNDS)].load();
+                next = left_buffer[mod(i + 1, DEF_BOUNDS)].load();
+                if(current.value == LNULL && next.value != LNULL) {
+                    head_found = (next.value == RNULL);
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = left_buffer;
+            last_head = left_head;
+            left_buffer = (atomic_deque_node_t *) left_buffer[DEF_BOUNDS - 1].load().value;
+            left_head = i + 2;
         }
     }
-    // left is reachable from right, right from left
+    assert(head_found);
+    long int cindex = mod(last_head, DEF_BOUNDS), pindex = mod(last_head + 1, DEF_BOUNDS);
+    fprintf(stdout, "\t\tLeft head: %p @ %ld\n", last_buffer, last_head);
+    assert(last_buffer[cindex].load().value == LNULL);
+    assert(last_buffer[pindex].load().value != LNULL);
+    fprintf(stdout, "\t\t\tCurrent: %p, Previous: %p\n", last_buffer[cindex].load().value, last_buffer[pindex].load().value);
+    
+    right_check = true;
+    head_found = false;
+    unreachable = false;
+    while(!head_found) {
+        if(right_check) {
+            // check over the current buffer
+            for(i = right_head; mod(i, DEF_BOUNDS) <= DEF_BOUNDS - 1; i++) {
+                deque_node_t previous, current;
+                current = right_buffer[mod(i, DEF_BOUNDS)].load();
+                previous = right_buffer[mod(i - 1, DEF_BOUNDS)].load();
+                if(current.value == RNULL && previous.value != RNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = right_buffer;
+            last_head = right_head;
+            right_buffer = (atomic_deque_node_t *) right_buffer[DEF_BOUNDS - 1].load().value;
+            right_head = i + 1;
+            // switch to right check if next ptr is null
+            if(right_buffer == RNULL)
+                right_check = false;
+        } else {
+            // check over the current buffer
+            for(i = right_head; mod(i, DEF_BOUNDS) > 0; i--) {
+                deque_node_t next, current;
+                current = right_buffer[mod(i, DEF_BOUNDS)].load();
+                next = right_buffer[mod(i - 1, DEF_BOUNDS)].load();
+                if(current.value == RNULL && next.value != RNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = right_buffer;
+            last_head = right_head;
+            right_buffer = (atomic_deque_node_t *) left_buffer[0].load().value;
+            right_head = i - 2;
+        }
+    }
+    assert(head_found);
+    cindex = mod(last_head, DEF_BOUNDS);
+    pindex = mod(last_head - 1, DEF_BOUNDS);
+    fprintf(stdout, "\t\tRight head: %p @ %ld\n", last_buffer, last_head);
+    fprintf(stdout, "\t\t\tCurrent: %p, Previous: %p\n", last_buffer[cindex].load().value, last_buffer[pindex].load().value);
+    assert(last_buffer[cindex].load().value == RNULL);
+    assert(last_buffer[pindex].load().value != RNULL);
 
     // all inserted elements are in deque
     // + no unknown elements are in deque
-
+    int pop_status = OK;
+    while(pop_status != EMPTY) {
+        int *pp = left_pop(test_deque, pop_status);
+        if(!is_null(pp) && pop_status == OK)
+            found.insert(*pp);
+    }
+    for(set_iter = expected.begin(); set_iter != expected.end(); set_iter++)
+        assert(found.find(*set_iter) != found.end());
+    for(set_iter = found.begin(); set_iter != found.end(); set_iter++)
+        assert(expected.find(*set_iter) != expected.end());
+    
+    return 0;
 }
 
+void *spec002_helper(void *args_void) {
+    int id = ((thread_args_t *) args_void)->id;
+    pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
+    //fprintf(stdout, "\t\tThread %d barrier %p\n", id, barrier);
+    int i, push_status;
+
+    wait_on_barrier(barrier);
+    int *push_value = (int *) malloc(sizeof(int));
+    *push_value = id + 1;
+    right_push(test_deque, push_value, push_status);
+    assert(push_status == OK);
+    wait_on_barrier(barrier);
+    
+    pthread_exit(NULL);
+}
+
+//     02. two thread pools push right 64 times in total
 int spec002() {
+    int i;
+    thread_pool_t pool1, pool2;
+    thread_args_t targs1, targs2;
+    pthread_barrier_t barrier;
+    spec_result_t *results1, *results2;
+    set<int> expected, found;
+    set<int>::iterator set_iter;
+    vector<atomic_deque_node_t *> left_buffer_chain, right_buffer_chain;
+    vector<atomic_deque_node_t *>::iterator left_iter;
+    vector<atomic_deque_node_t *>::reverse_iterator right_iter;
+    deque_hint_t left_hint, right_hint;
+    atomic_deque_node_t *left_buffer, *right_buffer, *last_buffer;
+    long int left_head, right_head, last_head;
+    bool left_check, right_check, head_found, unreachable;
+    
+    fprintf(stdout, "Spec %3d\n", 2);
+    for(i = 1; i <= THREAD_COUNT * 2; i++)
+        expected.insert(i);
+    init_pthread_barrier(barrier, THREAD_COUNT * 2);
+    init_thread_pool(pool1, 1, THREAD_COUNT);
+    init_thread_pool(pool2, 2, THREAD_COUNT);
+    init_thread_args(targs1, 1, &barrier);
+    init_thread_args(targs2, 2, &barrier);
+    start_thread_pool(pool1, &spec002_helper, targs1);
+    start_thread_pool(pool2, &spec002_helper, targs2);
+    results1 = wait_on_thread_pool(pool1);
+    results2 = wait_on_thread_pool(pool2);
+    
+    // both hints see exactly the same buffer chain
+    left_hint = test_deque.left_hint.load();
+    left_buffer = left_hint.nodes;
+    left_head = left_hint.index;
+    right_hint = test_deque.right_hint.load();
+    right_buffer = right_hint.nodes;
+    right_head = right_hint.index;
+    atomic_deque_node_t *iter = left_buffer;
+    while(iter[0].load().value != LNULL)
+        iter = (atomic_deque_node_t *) iter[0].load().value;
+    while(iter != (atomic_deque_node_t *) RNULL) {
+        left_buffer_chain.push_back(iter);
+        iter = (atomic_deque_node_t *) iter[DEF_BOUNDS - 1].load().value;
+    }
+    iter = right_buffer;
+    while(iter[DEF_BOUNDS - 1].load().value != RNULL)
+        iter = (atomic_deque_node_t *) iter[DEF_BOUNDS - 1].load().value;
+    while(iter != (atomic_deque_node_t *) LNULL) {
+        right_buffer_chain.push_back(iter);
+        iter = (atomic_deque_node_t *) iter[0].load().value;
+    }
+    left_iter = left_buffer_chain.begin();
+    right_iter = right_buffer_chain.rbegin();
+    while(left_iter != left_buffer_chain.end() && right_iter != right_buffer_chain.rend()) {
+        if(DEBUG) fprintf(stdout, "\tLeft chain: %p, right chain: %p\n", *left_iter, *right_iter);
+        assert(*left_iter == *right_iter);
+        left_iter++;
+        right_iter++;
+    }
+    
+    // actual heads are reachable from hints
+    left_check = true;
+    head_found = false;
+    unreachable = false;
+    while(!head_found) {
+        if(left_check) {
+            // check over the current buffer
+            for(i = left_head; mod(i, DEF_BOUNDS) >= 0; i--) {
+                deque_node_t previous, current;
+                current = left_buffer[mod(i, DEF_BOUNDS)].load();
+                previous = left_buffer[mod(i + 1, DEF_BOUNDS)].load();
+                if(current.value == LNULL && previous.value != LNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = left_buffer;
+            last_head = left_head;
+            left_buffer = (atomic_deque_node_t *) left_buffer[0].load().value;
+            left_head = i - 1;
+            // switch to right check if next ptr is null
+            if(left_buffer == LNULL)
+                left_check = false;
+        } else {
+            // check over the current buffer
+            for(i = left_head; mod(i, DEF_BOUNDS) < DEF_BOUNDS - 1; i++) {
+                deque_node_t next, current;
+                current = left_buffer[mod(i, DEF_BOUNDS)].load();
+                next = left_buffer[mod(i + 1, DEF_BOUNDS)].load();
+                if(current.value == LNULL && next.value != LNULL) {
+                    head_found = (next.value == RNULL);
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = left_buffer;
+            last_head = left_head;
+            left_buffer = (atomic_deque_node_t *) left_buffer[DEF_BOUNDS - 1].load().value;
+            left_head = i + 2;
+        }
+    }
+    assert(head_found);
+    long int cindex = mod(last_head, DEF_BOUNDS), pindex = mod(last_head + 1, DEF_BOUNDS);
+    fprintf(stdout, "\t\tLeft head: %p @ %ld\n", last_buffer, last_head);
+    assert(last_buffer[cindex].load().value == LNULL);
+    assert(last_buffer[pindex].load().value != LNULL);
+    fprintf(stdout, "\t\t\tCurrent: %p, Previous: %p\n", last_buffer[cindex].load().value, last_buffer[pindex].load().value);
+    
+    right_check = true;
+    head_found = false;
+    unreachable = false;
+    while(!head_found) {
+        if(right_check) {
+            // check over the current buffer
+            for(i = right_head; mod(i, DEF_BOUNDS) <= DEF_BOUNDS - 1; i++) {
+                deque_node_t previous, current;
+                current = right_buffer[mod(i, DEF_BOUNDS)].load();
+                previous = right_buffer[mod(i - 1, DEF_BOUNDS)].load();
+                if(current.value == RNULL && previous.value != RNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = right_buffer;
+            last_head = right_head;
+            right_buffer = (atomic_deque_node_t *) right_buffer[DEF_BOUNDS - 1].load().value;
+            right_head = i + 1;
+            // switch to right check if next ptr is null
+            if(right_buffer == RNULL)
+                right_check = false;
+        } else {
+            // check over the current buffer
+            for(i = right_head; mod(i, DEF_BOUNDS) > 0; i--) {
+                deque_node_t next, current;
+                current = right_buffer[mod(i, DEF_BOUNDS)].load();
+                next = right_buffer[mod(i - 1, DEF_BOUNDS)].load();
+                if(current.value == RNULL && next.value != RNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = right_buffer;
+            last_head = right_head;
+            right_buffer = (atomic_deque_node_t *) left_buffer[0].load().value;
+            right_head = i - 2;
+        }
+    }
+    assert(head_found);
+    cindex = mod(last_head, DEF_BOUNDS);
+    pindex = mod(last_head - 1, DEF_BOUNDS);
+    fprintf(stdout, "\t\tRight head: %p @ %ld\n", last_buffer, last_head);
+    fprintf(stdout, "\t\t\tCurrent: %p, Previous: %p\n", last_buffer[cindex].load().value, last_buffer[pindex].load().value);
+    assert(last_buffer[cindex].load().value == RNULL);
+    assert(last_buffer[pindex].load().value != RNULL);
 
+    // all inserted elements are in deque
+    // + no unknown elements are in deque
+    int pop_status = OK;
+    while(pop_status != EMPTY) {
+        int *pp = left_pop(test_deque, pop_status);
+        if(!is_null(pp) && pop_status == OK)
+            found.insert(*pp);
+    }
+    for(set_iter = expected.begin(); set_iter != expected.end(); set_iter++)
+        assert(found.find(*set_iter) != found.end());
+    for(set_iter = found.begin(); set_iter != found.end(); set_iter++)
+        assert(expected.find(*set_iter) != expected.end());
+    
+    return 0;
 }
 
+void *spec003_helper(void *args_void) {
+    int id = ((thread_args_t *) args_void)->id;
+    pthread_barrier_t *barrier = ((thread_args_t *) args_void)->barrier;
+    spec_result_t *results = (spec_result_t *) malloc(sizeof(spec_result_t));
+    //fprintf(stdout, "\t\tThread %d barrier %p\n", id, barrier);
+    int i, pop_status;
+    results->size = 1;
+    results->results = (int **) malloc(sizeof(int *));
+
+    wait_on_barrier(barrier);
+    results->results[0] = left_pop(test_deque, pop_status);
+    assert(push_status == OK);
+    wait_on_barrier(barrier);
+    
+    pthread_exit((void *) results);
+}
+
+//     03. two thread pools pop left 64 times in total
 int spec003() {
+    int i, push_status;
+    thread_pool_t pool1, pool2;
+    thread_args_t targs1, targs2;
+    pthread_barrier_t barrier;
+    spec_result_t *results1, *results2;
+    set<int> expected, found;
+    set<int>::iterator set_iter;
+    vector<atomic_deque_node_t *> left_buffer_chain, right_buffer_chain;
+    vector<atomic_deque_node_t *>::iterator left_iter;
+    vector<atomic_deque_node_t *>::reverse_iterator right_iter;
+    deque_hint_t left_hint, right_hint;
+    atomic_deque_node_t *left_buffer, *right_buffer, *last_buffer;
+    long int left_head, right_head, last_head;
+    bool left_check, right_check, head_found, unreachable;
+    
+    fprintf(stdout, "Spec %3d\n", 3);
+    for(i = 1; i <= THREAD_COUNT * 2; i += 2) {
+        expected.insert(i);
+        expected.insert(i + 1);
+        int *left_val = (int *) malloc(sizeof(int));
+        int *right_val = (int *) malloc(sizeof(int));
+        *left_val = i;
+        *right_val = i + 1;
+        left_push(test_deque, left_val, push_status);
+        assert(push_status == OK);
+        right_push(test_deque, right_val, push_status);
+        assert(push_status == OK);
+    }
+    init_pthread_barrier(barrier, THREAD_COUNT * 2);
+    init_thread_pool(pool1, 1, THREAD_COUNT);
+    init_thread_pool(pool2, 2, THREAD_COUNT);
+    init_thread_args(targs1, 1, &barrier);
+    init_thread_args(targs2, 2, &barrier);
+    start_thread_pool(pool1, &spec001_helper, targs1);
+    start_thread_pool(pool2, &spec001_helper, targs2);
+    results1 = wait_on_thread_pool(pool1);
+    results2 = wait_on_thread_pool(pool2);
+    for(i = 0; i < THREAD_COUNT; i++) {
+        if(results1[i].size > 0 && results1[i].results != NULL)
+            found.insert(*results1[i].results[0]);
+    }
+    for(i = 0; i < THREAD_COUNT; i++) {
+        if(results2[i].size > 0 && results2[i].results != NULL)
+            found.insert(*results2[i].results[0]);
+    }
+    // TODO: start from here yo
+    
+    // both hints see exactly the same buffer chain
+    left_hint = test_deque.left_hint.load();
+    left_buffer = left_hint.nodes;
+    left_head = left_hint.index;
+    right_hint = test_deque.right_hint.load();
+    right_buffer = right_hint.nodes;
+    right_head = right_hint.index;
+    atomic_deque_node_t *iter = left_buffer;
+    while(iter[0].load().value != LNULL)
+        iter = (atomic_deque_node_t *) iter[0].load().value;
+    while(iter != (atomic_deque_node_t *) RNULL) {
+        left_buffer_chain.push_back(iter);
+        iter = (atomic_deque_node_t *) iter[DEF_BOUNDS - 1].load().value;
+    }
+    iter = right_buffer;
+    while(iter[DEF_BOUNDS - 1].load().value != RNULL)
+        iter = (atomic_deque_node_t *) iter[DEF_BOUNDS - 1].load().value;
+    while(iter != (atomic_deque_node_t *) LNULL) {
+        right_buffer_chain.push_back(iter);
+        iter = (atomic_deque_node_t *) iter[0].load().value;
+    }
+    left_iter = left_buffer_chain.begin();
+    right_iter = right_buffer_chain.rbegin();
+    while(left_iter != left_buffer_chain.end() && right_iter != right_buffer_chain.rend()) {
+        if(DEBUG) fprintf(stdout, "\tLeft chain: %p, right chain: %p\n", *left_iter, *right_iter);
+        assert(*left_iter == *right_iter);
+        left_iter++;
+        right_iter++;
+    }
+    
+    // actual heads are reachable from hints
+    left_check = true;
+    head_found = false;
+    unreachable = false;
+    while(!head_found) {
+        if(left_check) {
+            // check over the current buffer
+            for(i = left_head; mod(i, DEF_BOUNDS) >= 0; i--) {
+                deque_node_t previous, current;
+                current = left_buffer[mod(i, DEF_BOUNDS)].load();
+                previous = left_buffer[mod(i + 1, DEF_BOUNDS)].load();
+                if(current.value == LNULL && previous.value != LNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = left_buffer;
+            last_head = left_head;
+            left_buffer = (atomic_deque_node_t *) left_buffer[0].load().value;
+            left_head = i - 1;
+            // switch to right check if next ptr is null
+            if(left_buffer == LNULL)
+                left_check = false;
+        } else {
+            // check over the current buffer
+            for(i = left_head; mod(i, DEF_BOUNDS) < DEF_BOUNDS - 1; i++) {
+                deque_node_t next, current;
+                current = left_buffer[mod(i, DEF_BOUNDS)].load();
+                next = left_buffer[mod(i + 1, DEF_BOUNDS)].load();
+                if(current.value == LNULL && next.value != LNULL) {
+                    head_found = (next.value == RNULL);
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = left_buffer;
+            last_head = left_head;
+            left_buffer = (atomic_deque_node_t *) left_buffer[DEF_BOUNDS - 1].load().value;
+            left_head = i + 2;
+        }
+    }
+    assert(head_found);
+    long int cindex = mod(last_head, DEF_BOUNDS), pindex = mod(last_head + 1, DEF_BOUNDS);
+    fprintf(stdout, "\t\tLeft head: %p @ %ld\n", last_buffer, last_head);
+    assert(last_buffer[cindex].load().value == LNULL);
+    assert(last_buffer[pindex].load().value != LNULL);
+    fprintf(stdout, "\t\t\tCurrent: %p, Previous: %p\n", last_buffer[cindex].load().value, last_buffer[pindex].load().value);
+    
+    right_check = true;
+    head_found = false;
+    unreachable = false;
+    while(!head_found) {
+        if(right_check) {
+            // check over the current buffer
+            for(i = right_head; mod(i, DEF_BOUNDS) <= DEF_BOUNDS - 1; i++) {
+                deque_node_t previous, current;
+                current = right_buffer[mod(i, DEF_BOUNDS)].load();
+                previous = right_buffer[mod(i - 1, DEF_BOUNDS)].load();
+                if(current.value == RNULL && previous.value != RNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = right_buffer;
+            last_head = right_head;
+            right_buffer = (atomic_deque_node_t *) right_buffer[DEF_BOUNDS - 1].load().value;
+            right_head = i + 1;
+            // switch to right check if next ptr is null
+            if(right_buffer == RNULL)
+                right_check = false;
+        } else {
+            // check over the current buffer
+            for(i = right_head; mod(i, DEF_BOUNDS) > 0; i--) {
+                deque_node_t next, current;
+                current = right_buffer[mod(i, DEF_BOUNDS)].load();
+                next = right_buffer[mod(i - 1, DEF_BOUNDS)].load();
+                if(current.value == RNULL && next.value != RNULL) {
+                    head_found = true;
+                    break;
+                }
+            }
+            // move to next buffer if possible
+            last_buffer = right_buffer;
+            last_head = right_head;
+            right_buffer = (atomic_deque_node_t *) left_buffer[0].load().value;
+            right_head = i - 2;
+        }
+    }
+    assert(head_found);
+    cindex = mod(last_head, DEF_BOUNDS);
+    pindex = mod(last_head - 1, DEF_BOUNDS);
+    fprintf(stdout, "\t\tRight head: %p @ %ld\n", last_buffer, last_head);
+    fprintf(stdout, "\t\t\tCurrent: %p, Previous: %p\n", last_buffer[cindex].load().value, last_buffer[pindex].load().value);
+    assert(last_buffer[cindex].load().value == RNULL);
+    assert(last_buffer[pindex].load().value != RNULL);
 
+    // all inserted elements are in deque
+    // + no unknown elements are in deque
+    int pop_status = OK;
+    while(pop_status != EMPTY) {
+        int *pp = left_pop(test_deque, pop_status);
+        if(!is_null(pp) && pop_status == OK)
+            found.insert(*pp);
+    }
+    for(set_iter = expected.begin(); set_iter != expected.end(); set_iter++)
+        assert(found.find(*set_iter) != found.end());
+    for(set_iter = found.begin(); set_iter != found.end(); set_iter++)
+        assert(expected.find(*set_iter) != expected.end());
+    
+    return 0;
 }
 
+//     04. two thread pools pop right 64 times in total
 int spec004() {
 
 }
@@ -134,9 +659,9 @@ int main(int argc, char *argv[]) {
     int i, spec_stat;
     
     for(i = 0; i < SPEC_COUNT; i++) {
-        init_bounded_deque(test_deque);
+        init_deque(test_deque);
         spec_stat = specs[i]();
-        clear_bounded_deque(test_deque);
+        clear_deque(test_deque);
     }
     
     return 0;
