@@ -1,7 +1,9 @@
 
 #include <atomic>
+#include <set>
 #include <stdio.h>
 #include <stdlib.h>
+#include <vector>
 #include "deque.h"
 
 using namespace std;
@@ -18,7 +20,7 @@ void left_push(deque_t &deque, int *elt, int &stat) {
     
     while(1) {
         k = oracle(deque, LEFT);
-        // NOTE: checking for k.node safety is left up to oracle
+        hazard_mark(deque, k.nodes, CURRENT); // mark buffer as hazardous
         previous = k.nodes[mod(k.index + 1, DEF_BOUNDS)].load();
         current = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
@@ -50,9 +52,11 @@ void left_push(deque_t &deque, int *elt, int &stat) {
                         deque.left_hint.compare_exchange_strong(k, new_hint);
                         deque.size++;
                         stat = OK;
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
                         return;
                     } else {
                         // make sure to free unused buffer!
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
                         free(buffer);
                     }
                 }
@@ -69,6 +73,7 @@ void left_push(deque_t &deque, int *elt, int &stat) {
                         deque.left_hint.compare_exchange_strong(k, new_hint);
                         deque.size++;
                         stat = OK;
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
                         return;
                     }
                 }
@@ -83,6 +88,7 @@ int *left_pop(deque_t &deque, int &stat) {
     
     while(1) {
         k = oracle(deque, LEFT);
+        hazard_mark(deque, k.nodes, CURRENT); // mark buffer as hazardous
         current = k.nodes[mod(k.index + 1, DEF_BOUNDS)].load();
         next = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
@@ -91,22 +97,27 @@ int *left_pop(deque_t &deque, int &stat) {
             
             if(current.value != RNULL && mod(k.index + 1, DEF_BOUNDS) == DEF_BOUNDS - 1) {
                 // cleanup case: try to detach and reclaim buffer
-                // TODO: hazard pointers
                 atomic_deque_node_t *next_right;
                 deque_node_t right_ptr_new, left_ptr_new, left_ptr_old, left_peek;
                 
                 // set sail for right neighbor!
+                // TODO: is it possible to fall asleep here and wake up with
+                // ptr to next buffer freed?
                 next_right = (atomic_deque_node_t *) k.nodes[mod(k.index + 1, DEF_BOUNDS)].load().value;
+                hazard_mark(deque, next_right, NEXT); // mark buffer as hazardous
                 left_ptr_old = next_right[mod(k.index + 2, DEF_BOUNDS)].load();
                 // if next buffer no longer points to this one, return immediately
                 if((atomic_deque_node_t *) left_ptr_old.value != k.nodes) {
-                    // TODO: mark as reclaimable!!!
+                    hazard_retire(deque, k.nodes, CURRENT); // release hazard
+                    hazard_retire(deque, next_right, NEXT); // release hazard
                     continue;
                 }
                 left_peek = next_right[mod(k.index + 3, DEF_BOUNDS)].load();
                 // empty if peek val is null (straddling case)
                 if(left_peek.value == RNULL && compare_val(next_right[mod(k.index + 3, DEF_BOUNDS)], left_peek)) {
                     stat = EMPTY;
+                    hazard_retire(deque, k.nodes, CURRENT); // release hazard
+                    hazard_retire(deque, next_right, NEXT); // release hazard
                     return NULL;
                 }
                 
@@ -125,12 +136,14 @@ int *left_pop(deque_t &deque, int &stat) {
                         set_deque_hint(new_hint, next_right, k.index + 2);
                         deque.left_hint.compare_exchange_strong(k, new_hint);
                         k.nodes[mod(k.index + 1, DEF_BOUNDS)].store(cur_new);
-                        // TODO: mark as reclaimable!!!
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
+                        hazard_retire(deque, next_right, NEXT); // release hazard
                     }
                 }
             } else {
                 if(current.value == RNULL && compare_val(k.nodes[mod(k.index + 1, DEF_BOUNDS)], current)) {
                     stat = EMPTY;
+                    hazard_retire(deque, k.nodes, CURRENT);
                     return NULL;
                 }
                 
@@ -146,6 +159,7 @@ int *left_pop(deque_t &deque, int &stat) {
                         deque.left_hint.compare_exchange_strong(k, new_hint);
                         deque.size--;
                         stat = OK;
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
                         return (int *) current.value;
                     }
                 }
@@ -160,7 +174,7 @@ void right_push(deque_t &deque, int *elt, int &stat) {
     
     while(1) {
         k = oracle(deque, RIGHT);
-        // NOTE: checking for k.node safety is left up to oracle
+        hazard_mark(deque, k.nodes, CURRENT); // mark buffer as hazardous
         previous = k.nodes[mod(k.index - 1, DEF_BOUNDS)].load();
         current = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
@@ -192,9 +206,11 @@ void right_push(deque_t &deque, int *elt, int &stat) {
                         deque.right_hint.compare_exchange_strong(k, new_hint);
                         deque.size++;
                         stat = OK;
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
                         return;
                     } else {
                         // make sure to free unused buffer!
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
                         free(buffer);
                     }
                 }
@@ -211,6 +227,7 @@ void right_push(deque_t &deque, int *elt, int &stat) {
                         deque.right_hint.compare_exchange_strong(k, new_hint);
                         deque.size++;
                         stat = OK;
+                        hazard_retire(deque, k.nodes, CURRENT); // release hazard
                         return;
                     }
                 }
@@ -225,6 +242,7 @@ int *right_pop(deque_t &deque, int &stat) {
     
     while(1) {
         k = oracle(deque, RIGHT);
+        hazard_mark(deque, k.nodes, CURRENT);
         current = k.nodes[mod(k.index - 1, DEF_BOUNDS)].load();
         next = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
@@ -239,16 +257,20 @@ int *right_pop(deque_t &deque, int &stat) {
                 
                 // set sail for right neighbor!
                 next_left = (atomic_deque_node_t *) k.nodes[mod(k.index - 1, DEF_BOUNDS)].load().value;
+                hazard_mark(deque, next_left, NEXT);
                 right_ptr_old = next_left[mod(k.index - 2, DEF_BOUNDS)].load();
                 // if next buffer no longer points to this one, return immediately
                 if((atomic_deque_node_t *) right_ptr_old.value != k.nodes) {
-                    // TODO: mark as reclaimable!!!
+                    hazard_retire(deque, k.nodes, CURRENT);
+                    hazard_retire(deque, next_left, NEXT);
                     continue;
                 }
                 right_peek = next_left[mod(k.index - 3, DEF_BOUNDS)].load();
                 // empty if peek val is null
                 if(right_peek.value == LNULL && compare_val(next_left[mod(k.index - 3, DEF_BOUNDS)], right_peek)) {
                     stat = EMPTY;
+                    hazard_retire(deque, k.nodes, CURRENT);
+                    hazard_retire(deque, next_left, NEXT);
                     return NULL;
                 }
                 
@@ -267,12 +289,14 @@ int *right_pop(deque_t &deque, int &stat) {
                         set_deque_hint(new_hint, next_left, k.index - 2);
                         deque.right_hint.compare_exchange_strong(k, new_hint);
                         k.nodes[mod(k.index - 1, DEF_BOUNDS)].store(cur_new);
-                        // TODO: mark as reclaimable!!!
+                        hazard_retire(deque, k.nodes, CURRENT);
+                        hazard_retire(deque, next_left, NEXT);
                     }
                 }
             } else {
                 if(current.value == LNULL && compare_val(k.nodes[mod(k.index - 1, DEF_BOUNDS)], current)) {
                     stat = EMPTY;
+                    hazard_retire(deque, k.nodes, CURRENT);
                     return NULL;
                 }
                 
@@ -288,6 +312,7 @@ int *right_pop(deque_t &deque, int &stat) {
                         deque.right_hint.compare_exchange_strong(k, new_hint);
                         deque.size--;
                         stat = OK;
+                        hazard_retire(deque, k.nodes, CURRENT);
                         return (int *) current.value;
                     }
                 }
@@ -385,6 +410,64 @@ deque_hint_t oracle(deque_t &deque, oracle_end deque_end) {
     }
 }
 
+void hazard_mark(deque_t &deque, atomic_deque_node_t *ptr, hazard_type type) {
+    pthread_t me = pthread_self();
+    
+    // immediately remove ptr from retired list if present    
+    if(deque.hazards[me]->retired.find(ptr) != deque.hazards[me]->retired.end())
+        deque.hazards[me]->retired.erase(ptr);
+    
+    if(type == CURRENT) {
+        deque.hazards[me]->left = ptr;
+    } else {
+        deque.hazards[me]->right = ptr;
+    }
+}
+
+void hazard_retire(deque_t &deque, atomic_deque_node_t *ptr, hazard_type type) {
+    pthread_t me = pthread_self();
+    
+    if(type == CURRENT && deque.hazards[me]->left == ptr)
+        deque.hazards[me]->retired.insert(ptr);
+    if(type == NEXT && deque.hazards[me]->right == ptr)
+        deque.hazards[me]->retired.insert(ptr);
+    
+    if(deque.hazards[me]->retired.size() >= RETIRE_TICK) {
+        hazard_scan(deque);
+    }
+}
+
+void hazard_scan(deque_t &deque) {
+    set<atomic_deque_node_t *> plist;
+    set<atomic_deque_node_t *> rlist;
+    set<atomic_deque_node_t *>::iterator r;
+    map<pthread_t, hazard_t *>::iterator m;
+    pthread_t me = pthread_self();
+    
+    // stage 1: scan all ptrs and insert into removal set
+    for(m = deque.hazards.begin(); m != deque.hazards.end(); m++) {
+        hazard_t *hazard = m->second;
+        if(hazard->left != NULL)
+            plist.insert(hazard->left);
+        if(hazard->right != NULL)
+            plist.insert(hazard->right);
+    }
+    
+    // stage 2: search removal set and free
+    rlist = deque.hazards[me]->retired; // local copy
+    for(r = rlist.begin(); r != rlist.end(); r++) {
+        deque.hazards[me]->retired.erase(*r);
+        if(plist.find(*r) == plist.end()) {
+            // unused buffer, can be cleared and freed!
+            clear_buffer(*r, DEF_BOUNDS);
+            free(*r);
+        } else {
+            // some other thread is still using this pointer
+            deque.hazards[me]->retired.insert(*r);
+        }
+    }
+}
+
 void init_deque_node(atomic_deque_node_t &node, void *init_null) {
     deque_node_t blank_node;
     blank_node.value = init_null;
@@ -392,9 +475,10 @@ void init_deque_node(atomic_deque_node_t &node, void *init_null) {
     node.store(blank_node);
 }
 
-void init_deque(deque_t &deque) {
+void init_deque(deque_t &deque, pthread_t *threads, int thread_count) {
     atomic_deque_node_t *buffer;
     deque_hint_t left_hint, right_hint;
+    int i;
     
     buffer = (atomic_deque_node_t *) malloc(DEF_BOUNDS * sizeof(atomic_deque_node_t));
     init_buffer(buffer, DEF_BOUNDS, SPLIT);
@@ -404,6 +488,12 @@ void init_deque(deque_t &deque) {
     set_deque_hint(right_hint, buffer, DEF_BOUNDS / 2);
     deque.left_hint.store(left_hint);
     deque.right_hint.store(right_hint);
+    
+    for(i = 0; i < thread_count; i++) {
+        hazard_t *hazard = (hazard_t *) malloc(sizeof(hazard_t));
+        init_hazard(hazard);
+        deque.hazards[threads[i]] = hazard;
+    }
 }
 
 void init_buffer(atomic_deque_node_t *buffer, int size, buffer_fill fill) {
@@ -433,6 +523,12 @@ void init_buffer(atomic_deque_node_t *buffer, int size, buffer_fill fill) {
     }
 }
 
+void init_hazard(hazard_t *hazard) {
+    hazard->left = NULL;
+    hazard->right = NULL;
+    hazard->retired = set<atomic_deque_node_t *>();
+}
+
 void clear_deque_node(atomic_deque_node_t &node) {
     deque_node_t blank_node, old_node;
     blank_node.value = NULL;
@@ -446,6 +542,8 @@ void clear_deque(deque_t &deque) {
     bool left_check;
     atomic_deque_node_t *buffer, *bufsave, *left_next, *right_next;
     deque_hint_t left_hint, right_hint;
+    map<pthread_t, hazard_t *>::iterator iter;
+    set<atomic_deque_node_t *> freed;
     
     buffer = deque.left_hint.load().nodes;
     left_next = (atomic_deque_node_t *) buffer[0].load().value;
@@ -457,12 +555,14 @@ void clear_deque(deque_t &deque) {
     while(!is_null(left_next) && !is_null(right_next)) {
         if(left_check) {
             buffer = left_next;
+            freed.insert(buffer);
             left_next = (atomic_deque_node_t *) buffer[0].load().value;
             clear_buffer(buffer, DEF_BOUNDS);
             // free!
             free(buffer);
         } else {
             buffer = right_next;
+            freed.insert(buffer);
             right_next = (atomic_deque_node_t *) buffer[DEF_BOUNDS - 1].load().value;
             clear_buffer(buffer, DEF_BOUNDS);
             // free!
@@ -476,6 +576,35 @@ void clear_deque(deque_t &deque) {
     set_deque_hint(right_hint, buffer, DEF_BOUNDS / 2);
     deque.left_hint.store(left_hint);
     deque.right_hint.store(right_hint);
+    
+    for(iter = deque.hazards.begin(); iter != deque.hazards.end(); iter++) {
+        set<atomic_deque_node_t *>::iterator v;
+        atomic_deque_node_t *left = deque.hazards[iter->first]->left;
+        atomic_deque_node_t *right = deque.hazards[iter->first]->right;
+        
+        if(freed.find(left) == freed.end()) {
+            clear_buffer(left, DEF_BOUNDS);
+            free(left);
+            freed.insert(left);
+            deque.hazards[iter->first]->left = NULL;
+        }
+        
+        if(freed.find(right) == freed.end()) {
+            clear_buffer(right, DEF_BOUNDS);
+            free(right);
+            freed.insert(right);
+            deque.hazards[iter->first]->right = NULL;
+        }
+        
+        for(v = iter->second->retired.begin(); v != iter->second->retired.end(); v++) {
+            if(freed.find(*v) == freed.end()) {
+                clear_buffer(*v, DEF_BOUNDS);
+                free(*v);
+                freed.insert(*v);
+            }
+        }
+        iter->second->retired.clear();
+    }
 }
 
 void clear_buffer(atomic_deque_node_t *buffer, int size) {

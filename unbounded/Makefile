@@ -13,7 +13,7 @@ DSRCS = $(SRC_DIR)/deque.cc# $(SRC_DIR)/deque_circ.cc
 DLIBS = $(DSRCS:.cc=.h)
 DOBJS = $(DSRCS:.cc=.o)
 
-ESRCS = $(ETC_DIR)/size_check.cc
+ESRCS = $(ETC_DIR)/size_check.cc $(ETC_DIR)/map_check.cc
 ELIBS = $(ESRCS:.cc=.h)
 EOBJS = $(ESRCS:.cc=.o)
 EEXEC = $(ESRCS:%.cc=%)
@@ -24,27 +24,16 @@ TOBJS = $(TSRCS:.cc=.o)
 TEXEC = $(TSRCS:%.cc=%)
 
 SRCS = $(DSRCS) $(ESRCS) $(TSRCS)
-OBJS = $(DOBJS) $(TOBJS)
+OBJS = $(DOBJS) $(EOBJS) $(TOBJS)
 EXECS = $(EEXEC) $(TEXEC)
-
-#all: $(EEXEC) $(TEXEC)
-
-#$(DOBJS): $(@:.o=.c)
-	#@echo making $@
-	#$(CC) $(CCFLAGS) $(@:.o=.c) -o $@
-
-#$(TEXEC): $@.o $(DOBJS)
-	#@echo making $@
-	#$(CC) $(LDFLAGS) -o $@ $^
-
-#$(TOBJS): $(@:.o=.c)
-	#@echo making $@
-	#$(CC) $(CCFLAGS) $(@:.o=.c) -o $@
 
 all: $(EEXEC) $(TEXEC)
 
 $(ETC_DIR)/size_check: $(ETC_DIR)/size_check.o
 	$(CC) $(LDFLAGS) -o $@ $^
+
+$(ETC_DIR)/map_check: $(ETC_DIR)/map_check.o
+	$(CC) $(LDFLAGS) -o $@ $^ -pthread
 
 $(TEST_DIR)/serial: $(DOBJS) $(TEST_DIR)/serial.o 
 	$(CC) $(LDFLAGS) -o $@ $^

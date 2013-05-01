@@ -1,9 +1,13 @@
 
 #include <atomic>
+#include <map>
+#include <set>
+#include <pthread.h>
 
 #define LNULL (void *) 0b01
 #define RNULL (void *) 0b10
 #define DEF_BOUNDS 32
+#define RETIRE_TICK 5
 
 using namespace std;
 
@@ -26,15 +30,23 @@ typedef struct deque_hint_struct {
 
 typedef atomic<deque_hint_t> atomic_deque_hint_t;
 
+typedef struct hazard_struct {
+    atomic_deque_node_t *left;
+    atomic_deque_node_t *right;
+    set<atomic_deque_node_t *> retired;
+} hazard_t;
+
 typedef struct deque_struct {
     atomic_ulong size;
     atomic_deque_hint_t left_hint;
     atomic_deque_hint_t right_hint;
+    map<pthread_t, hazard_t *> hazards;
 } deque_t;
 
 typedef enum { LEFT, RIGHT } oracle_end;
 typedef enum { OK, EMPTY, FULL } deque_state;
 typedef enum { SPLIT, LBUF, RBUF } buffer_fill;
+typedef enum { CURRENT, NEXT } hazard_type;
 
 /*
  * Inline Functions ("macros")
@@ -70,10 +82,16 @@ void right_push(deque_t &deque, int *elt, int &stat);
 int *right_pop(deque_t &deque, int &stat);
 deque_hint_t oracle(deque_t &deque, oracle_end deque_end);
 
+// hazard pointer mm
+void hazard_mark(deque_t &deque, atomic_deque_node_t *ptr, hazard_type type);
+void hazard_retire(deque_t &deque, atomic_deque_node_t *ptr, hazard_type type);
+void hazard_scan(deque_t &deque);
+
 // various helpers
 void init_deque_node(atomic_deque_node_t &node);
-void init_deque(deque_t &deque);
+void init_deque(deque_t &deque, pthread_t *threads, int thread_count);
 void init_buffer(atomic_deque_node_t *buffer, int size, buffer_fill fill);
+void init_hazard(hazard_t *hazard);
 void clear_deque_node(deque_node_t &node);
 void clear_deque(deque_t &deque);
 void clear_buffer(atomic_deque_node_t *buffer, int size);
