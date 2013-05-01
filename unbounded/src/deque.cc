@@ -93,39 +93,30 @@ int *left_pop(deque_t &deque, int &stat) {
                 // cleanup case: try to detach and reclaim buffer
                 // TODO: hazard pointers
                 atomic_deque_node_t *next_right;
-                deque_node_t right_ptr_new, left_ptr_new, left_ptr_old, left_peek;
+                deque_node_t left_ptr_new, left_ptr_old, left_peek_new, left_peek_old;
                 
                 // set sail for right neighbor!
                 next_right = (atomic_deque_node_t *) k.nodes[mod(k.index + 1, DEF_BOUNDS)].load().value;
                 left_ptr_old = next_right[mod(k.index + 2, DEF_BOUNDS)].load();
-                // if next buffer no longer points to this one, return immediately
-                if((atomic_deque_node_t *) left_ptr_old.value != k.nodes) {
-                    // TODO: mark as reclaimable!!!
-                    continue;
-                }
-                left_peek = next_right[mod(k.index + 3, DEF_BOUNDS)].load();
+                left_peek_old = next_right[mod(k.index + 3, DEF_BOUNDS)].load();
                 // empty if peek val is null (straddling case)
-                if(left_peek.value == RNULL && compare_val(next_right[mod(k.index + 3, DEF_BOUNDS)], left_peek)) {
+                if(left_peek_old.value == RNULL && compare_val(next_right[mod(k.index + 3, DEF_BOUNDS)], left_peek_old)) {
                     stat = EMPTY;
                     return NULL;
                 }
                 
-                // attempt to detach
-                set_deque_node(next_new, LNULL, next.count);
-                set_deque_node(left_ptr_new, LNULL, left_ptr_old.count);
-                // ASSUMPTION! we don't care that the right pointer can change
-                // if it points to a new buffer, then next would have had to
-                // change as well
-                set_deque_node(cur_new, RNULL, current.count);
+                set_deque_node(left_ptr_new, (void *) k.nodes, left_ptr_old.count);
+                set_deque_node(left_peek_new, LNULL, left_peek_old.count);
                 
-                if(k.nodes[mod(k.index, DEF_BOUNDS)].compare_exchange_strong(next, next_new)) {
-                    if(next_right[mod(k.index + 2, DEF_BOUNDS)].compare_exchange_strong(left_ptr_old, left_ptr_new)) {
+                if(next_right[mod(k.index + 2, DEF_BOUNDS)].compare_exchange_strong(left_ptr_old, left_ptr_new)) {
+                    if(next_right[mod(k.index + 3, DEF_BOUNDS)].compare_exchange_strong(left_peek_old, left_peek_new)) {
                         // update loc hint
                         deque_hint_t new_hint;
-                        set_deque_hint(new_hint, next_right, k.index + 2);
+                        set_deque_hint(new_hint, next_right, k.index + 3);
                         deque.left_hint.compare_exchange_strong(k, new_hint);
-                        k.nodes[mod(k.index + 1, DEF_BOUNDS)].store(cur_new);
-                        // TODO: mark as reclaimable!!!
+                        deque.size--;
+                        stat = OK;
+                        return (int *) left_peek_old.value;
                     }
                 }
             } else {
@@ -235,7 +226,7 @@ int *right_pop(deque_t &deque, int &stat) {
                 // cleanup case: try to detach and reclaim buffer
                 // TODO: hazard pointers
                 atomic_deque_node_t *next_left;
-                deque_node_t left_ptr_new, right_ptr_new, right_ptr_old, right_peek;
+                deque_node_t right_ptr_new, right_ptr_old, right_peek_new, right_peek_old;
                 
                 // set sail for right neighbor!
                 next_left = (atomic_deque_node_t *) k.nodes[mod(k.index - 1, DEF_BOUNDS)].load().value;
@@ -245,29 +236,25 @@ int *right_pop(deque_t &deque, int &stat) {
                     // TODO: mark as reclaimable!!!
                     continue;
                 }
-                right_peek = next_left[mod(k.index - 3, DEF_BOUNDS)].load();
+                right_peek_old = next_left[mod(k.index - 3, DEF_BOUNDS)].load();
                 // empty if peek val is null
-                if(right_peek.value == LNULL && compare_val(next_left[mod(k.index - 3, DEF_BOUNDS)], right_peek)) {
+                if(right_peek_old.value == LNULL && compare_val(next_left[mod(k.index - 3, DEF_BOUNDS)], right_peek_old)) {
                     stat = EMPTY;
                     return NULL;
                 }
                 
-                // attempt to detach
-                set_deque_node(next_new, RNULL, next.count);
-                set_deque_node(right_ptr_new, RNULL, right_ptr_old.count);
-                // ASSUMPTION! we don't care that the right pointer can change
-                // if it points to a new buffer, then next would have had to
-                // change as well
-                set_deque_node(cur_new, LNULL, current.count);
+                set_deque_node(right_ptr_new, (void *) k.nodes, right_ptr_old.count);
+                set_deque_node(right_peek_new, RNULL, right_peek_old.count);
                 
-                if(k.nodes[mod(k.index, DEF_BOUNDS)].compare_exchange_strong(next, next_new)) {
-                    if(next_left[mod(k.index - 2, DEF_BOUNDS)].compare_exchange_strong(right_ptr_old, right_ptr_new)) {
+                if(next_left[mod(k.index - 2, DEF_BOUNDS)].compare_exchange_strong(right_ptr_old, right_ptr_new)) {
+                    if(next_left[mod(k.index - 3, DEF_BOUNDS)].compare_exchange_strong(right_peek_old, right_peek_new)) {
                         // update loc hint
                         deque_hint_t new_hint;
-                        set_deque_hint(new_hint, next_left, k.index - 2);
+                        set_deque_hint(new_hint, next_left, k.index - 3);
                         deque.right_hint.compare_exchange_strong(k, new_hint);
-                        k.nodes[mod(k.index - 1, DEF_BOUNDS)].store(cur_new);
-                        // TODO: mark as reclaimable!!!
+                        deque.size--;
+                        stat = OK;
+                        return (int *) right_peek_old.value;
                     }
                 }
             } else {
