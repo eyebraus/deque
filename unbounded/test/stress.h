@@ -15,7 +15,7 @@ typedef struct thread_args_struct {
 typedef enum { LEFT_BLANK, NOT_BLANK, RIGHT_BLANK } scan_state;
 typedef enum { CONSISTENT, LEFT_END_CORRUPT, RIGHT_END_CORRUPT,
     BROKEN_LEFT_SECTION, BROKEN_RIGHT_SECTION, MIXED_LEFT_RIGHT_SECTION,
-    LOST_OPS, EXTRA_OPS } scan_errors;
+    LOST_OPS, EXTRA_OPS, UNREACHABLE } scan_errors;
 
 static inline void init_thread_args(thread_args_t &args, unsigned int id) {
     args.id = id;

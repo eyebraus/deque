@@ -1,0 +1,29 @@
+Readme for high resolution timer  *
+                                  *
+Author : Xipeng Shen              *
+  Date : 5 Feb. 2004              *
+===================================
+o Sun machines (e.g. heart) and IBM PowerPC machines (e.g. discovery)
+  (Thanks to Bijun He)
+
+  o For regular uses, just call gethrtime() on Sun machine and
+    get_real_time() on PowerPC.  Both are in nano-second precision but
+    the function call itself is quite costly: 200ns for gethrtime()
+    and 100ns for get_real_time().
+  
+  o For high resolution timing, see file hw_timers.h with lots of comments.
+
+o Linux machines 
+  (Thanks to Kai Shen)
+
+  See file hrtimer_x86.c and hrtimer_x86.h. They provides function
+  gethrtime_x86() for high resolution timing.
+
+o Alpha machines
+
+  See file hrtimer_alpha.c and hrtimer_alpha.h. They provides function
+  gethrtime_alpha() for high resolution timing. Note, this is for
+  short period high resolution timing. The timer will reset to 0 after
+  7.17023 seconds. If you want to timing more, you may want to do some
+  accumulating work.
+

@@ -3,7 +3,7 @@
 
 #define LNULL (int *) 0b01
 #define RNULL (int *) 0b10
-#define DEF_BOUNDS 32
+#define DEF_BOUNDS 64
 
 using namespace std;
 

@@ -1,7 +1,7 @@
 
 CXX = g++
 CC = $(CXX)
-CCFLAGS = -c -std=c++11 -g -O0
+CCFLAGS = -c -std=c++11 -g
 CXXFLAGS = $(CCFLAGS)
 LDFLAGS = 
 
@@ -18,28 +18,14 @@ ELIBS = $(ESRCS:.cc=.h)
 EOBJS = $(ESRCS:.cc=.o)
 EEXEC = $(ESRCS:%.cc=%)
 
-TSRCS = $(TEST_DIR)/serial.cc $(TEST_DIR)/concurrent.cc #$(TEST_DIR)/stress.cc
+TSRCS = $(TEST_DIR)/serial.cc $(TEST_DIR)/concurrent.cc $(TEST_DIR)/stress.cc
 TLIBS = $(TSRCS:.cc=.h)
 TOBJS = $(TSRCS:.cc=.o)
 TEXEC = $(TSRCS:%.cc=%)
 
 SRCS = $(DSRCS) $(ESRCS) $(TSRCS)
-OBJS = $(DOBJS) $(TOBJS)
+OBJS = $(DOBJS) $(EOBJS) $(TOBJS)
 EXECS = $(EEXEC) $(TEXEC)
-
-#all: $(EEXEC) $(TEXEC)
-
-#$(DOBJS): $(@:.o=.c)
-	#@echo making $@
-	#$(CC) $(CCFLAGS) $(@:.o=.c) -o $@
-
-#$(TEXEC): $@.o $(DOBJS)
-	#@echo making $@
-	#$(CC) $(LDFLAGS) -o $@ $^
-
-#$(TOBJS): $(@:.o=.c)
-	#@echo making $@
-	#$(CC) $(CCFLAGS) $(@:.o=.c) -o $@
 
 all: $(EEXEC) $(TEXEC)
 

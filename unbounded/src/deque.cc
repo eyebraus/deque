@@ -86,37 +86,31 @@ int *left_pop(deque_t &deque, int &stat) {
         current = k.nodes[mod(k.index + 1, DEF_BOUNDS)].load();
         next = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
-        if(current.value != LNULL && next.value == LNULL) {
+        if(current.value != LNULL && (next.value == LNULL || mod(k.index, DEF_BOUNDS) == 0)) {
             deque_node_t cur_new, next_new;
             
             if(current.value != RNULL && mod(k.index + 1, DEF_BOUNDS) == DEF_BOUNDS - 1) {
-                // cleanup case: try to detach and reclaim buffer
-                // TODO: hazard pointers
+                // check for emptiness, or try to clean up hint
                 atomic_deque_node_t *next_right;
-                deque_node_t left_ptr_new, left_ptr_old, left_peek_new, left_peek_old;
+                deque_node_t right_peek, right_peek_new;
                 
-                // set sail for right neighbor!
                 next_right = (atomic_deque_node_t *) k.nodes[mod(k.index + 1, DEF_BOUNDS)].load().value;
-                left_ptr_old = next_right[mod(k.index + 2, DEF_BOUNDS)].load();
-                left_peek_old = next_right[mod(k.index + 3, DEF_BOUNDS)].load();
+                right_peek = next_right[mod(k.index + 3, DEF_BOUNDS)].load();
                 // empty if peek val is null (straddling case)
-                if(left_peek_old.value == RNULL && compare_val(next_right[mod(k.index + 3, DEF_BOUNDS)], left_peek_old)) {
+                if(right_peek.value == RNULL && compare_val(next_right[mod(k.index + 3, DEF_BOUNDS)], right_peek)) {
                     stat = EMPTY;
                     return NULL;
                 }
                 
-                set_deque_node(left_ptr_new, (void *) k.nodes, left_ptr_old.count);
-                set_deque_node(left_peek_new, LNULL, left_peek_old.count);
+                copy_deque_node(right_peek_new, right_peek);
+                copy_deque_node(next_new, next);
                 
-                if(next_right[mod(k.index + 2, DEF_BOUNDS)].compare_exchange_strong(left_ptr_old, left_ptr_new)) {
-                    if(next_right[mod(k.index + 3, DEF_BOUNDS)].compare_exchange_strong(left_peek_old, left_peek_new)) {
+                if(k.nodes[mod(k.index, DEF_BOUNDS)].compare_exchange_strong(next, next_new)) {
+                    if(next_right[mod(k.index + 3, DEF_BOUNDS)].compare_exchange_strong(right_peek, right_peek_new)) {
                         // update loc hint
                         deque_hint_t new_hint;
-                        set_deque_hint(new_hint, next_right, k.index + 3);
+                        set_deque_hint(new_hint, next_right, k.index + 2);
                         deque.left_hint.compare_exchange_strong(k, new_hint);
-                        deque.size--;
-                        stat = OK;
-                        return (int *) left_peek_old.value;
                     }
                 }
             } else {
@@ -219,42 +213,31 @@ int *right_pop(deque_t &deque, int &stat) {
         current = k.nodes[mod(k.index - 1, DEF_BOUNDS)].load();
         next = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
-        if(current.value != RNULL && next.value == RNULL) {
+        if(current.value != RNULL && (next.value == RNULL || mod(k.index, DEF_BOUNDS) == DEF_BOUNDS - 1)) {
             deque_node_t cur_new, next_new;
             
             if(current.value != LNULL && mod(k.index - 1, DEF_BOUNDS) == 0) {
-                // cleanup case: try to detach and reclaim buffer
-                // TODO: hazard pointers
+                // check for emptiness, or try to clean up hint
                 atomic_deque_node_t *next_left;
-                deque_node_t right_ptr_new, right_ptr_old, right_peek_new, right_peek_old;
+                deque_node_t left_peek, left_peek_new;
                 
-                // set sail for right neighbor!
                 next_left = (atomic_deque_node_t *) k.nodes[mod(k.index - 1, DEF_BOUNDS)].load().value;
-                right_ptr_old = next_left[mod(k.index - 2, DEF_BOUNDS)].load();
-                // if next buffer no longer points to this one, return immediately
-                if((atomic_deque_node_t *) right_ptr_old.value != k.nodes) {
-                    // TODO: mark as reclaimable!!!
-                    continue;
-                }
-                right_peek_old = next_left[mod(k.index - 3, DEF_BOUNDS)].load();
-                // empty if peek val is null
-                if(right_peek_old.value == LNULL && compare_val(next_left[mod(k.index - 3, DEF_BOUNDS)], right_peek_old)) {
+                left_peek = next_left[mod(k.index - 3, DEF_BOUNDS)].load();
+                // empty if peek val is null (straddling case)
+                if(left_peek.value == LNULL && compare_val(next_left[mod(k.index - 3, DEF_BOUNDS)], left_peek)) {
                     stat = EMPTY;
                     return NULL;
                 }
                 
-                set_deque_node(right_ptr_new, (void *) k.nodes, right_ptr_old.count);
-                set_deque_node(right_peek_new, RNULL, right_peek_old.count);
+                copy_deque_node(left_peek_new, left_peek);
+                copy_deque_node(next_new, next);
                 
-                if(next_left[mod(k.index - 2, DEF_BOUNDS)].compare_exchange_strong(right_ptr_old, right_ptr_new)) {
-                    if(next_left[mod(k.index - 3, DEF_BOUNDS)].compare_exchange_strong(right_peek_old, right_peek_new)) {
+                if(k.nodes[mod(k.index, DEF_BOUNDS)].compare_exchange_strong(next, next_new)) {
+                    if(next_left[mod(k.index - 3, DEF_BOUNDS)].compare_exchange_strong(left_peek, left_peek_new)) {
                         // update loc hint
                         deque_hint_t new_hint;
-                        set_deque_hint(new_hint, next_left, k.index - 3);
+                        set_deque_hint(new_hint, next_left, k.index - 2);
                         deque.right_hint.compare_exchange_strong(k, new_hint);
-                        deque.size--;
-                        stat = OK;
-                        return (int *) right_peek_old.value;
                     }
                 }
             } else {
@@ -304,6 +287,11 @@ deque_hint_t oracle(deque_t &deque, oracle_end deque_end) {
                 for(i = start; mod(i, DEF_BOUNDS) < DEF_BOUNDS - 1; i++) {
                     current = buffer[mod(i, DEF_BOUNDS)].load();
                     previous = buffer[mod(i + 1, DEF_BOUNDS)].load();
+                    // buffer edge hit, but this will be head since chain ends
+                    if(mod(i + 1, DEF_BOUNDS) == DEF_BOUNDS - 1 && current.value == LNULL && previous.value == RNULL) {
+                        set_deque_hint(new_hint, buffer, i);
+                        return new_hint;
+                    }
                     if(current.value == LNULL && previous.value != LNULL) {
                         set_deque_hint(new_hint, buffer, i);
                         return new_hint;
@@ -344,6 +332,11 @@ deque_hint_t oracle(deque_t &deque, oracle_end deque_end) {
                 for(i = start; mod(i, DEF_BOUNDS) > 0; i--) {
                     current = buffer[mod(i, DEF_BOUNDS)].load();
                     previous = buffer[mod(i - 1, DEF_BOUNDS)].load();
+                    // buffer edge hit, but this will be head since chain ends
+                    if(mod(i - 1, DEF_BOUNDS) == 0 && current.value == RNULL && previous.value == LNULL) {
+                        set_deque_hint(new_hint, buffer, i);
+                        return new_hint;
+                    }
                     if(current.value == RNULL && previous.value != RNULL) {
                         set_deque_hint(new_hint, buffer, i);
                         return new_hint;
