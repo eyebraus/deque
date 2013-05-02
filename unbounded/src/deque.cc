@@ -22,6 +22,7 @@ void left_push(deque_t &deque, int *elt, int &stat) {
         previous = k.nodes[mod(k.index + 1, DEF_BOUNDS)].load();
         current = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
+        // TODO: FIX THIS!!!! you should push whenever current is at 0
         if(previous.value != LNULL && current.value == LNULL) {
             deque_node_t prev_new, cur_new;
             
@@ -149,6 +150,7 @@ void right_push(deque_t &deque, int *elt, int &stat) {
         previous = k.nodes[mod(k.index - 1, DEF_BOUNDS)].load();
         current = k.nodes[mod(k.index, DEF_BOUNDS)].load();
         
+        // TODO: FIX THIS!!!! you should push whenever current is at SIZE - 1
         if(previous.value != RNULL && current.value == RNULL) {
             deque_node_t prev_new, cur_new;
             
