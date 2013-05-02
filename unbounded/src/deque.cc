@@ -90,6 +90,7 @@ int *left_pop(deque_t &deque, int &stat) {
         if(current.value != LNULL && (next.value == LNULL || mod(k.index, DEF_BOUNDS) == 0)) {
             deque_node_t cur_new, next_new;
             
+            // TODO: I think only second half of && is needed
             if(current.value != RNULL && mod(k.index + 1, DEF_BOUNDS) == DEF_BOUNDS - 1) {
                 // check for emptiness, or try to clean up hint
                 atomic_deque_node_t *next_right;
@@ -218,6 +219,7 @@ int *right_pop(deque_t &deque, int &stat) {
         if(current.value != RNULL && (next.value == RNULL || mod(k.index, DEF_BOUNDS) == DEF_BOUNDS - 1)) {
             deque_node_t cur_new, next_new;
             
+            // TODO: I think only second half of && is needed
             if(current.value != LNULL && mod(k.index - 1, DEF_BOUNDS) == 0) {
                 // check for emptiness, or try to clean up hint
                 atomic_deque_node_t *next_left;
