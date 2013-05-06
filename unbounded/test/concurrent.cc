@@ -441,6 +441,7 @@ void *spec003_helper(void *args_void) {
     wait_on_barrier(barrier);
     results->results[0] = left_pop(test_deque, pop_status);
     assert(pop_status == OK);
+    assert(!is_null(results->results[0]));
     wait_on_barrier(barrier);
     
     pthread_exit((void *) results);
@@ -497,8 +498,10 @@ int spec003() {
             results1[i].size = 0;
             results1[i].results = NULL;
         }
-        if(results1[i].size > 0 && results1[i].results != NULL)
+        if(results1[i].size > 0 && results1[i].results != NULL && !is_null(results1[i].results[0]))
             found.insert(*results1[i].results[0]);
+        else if(is_null(results1[i].results[0]))
+            fprintf(stdout, "\t\t\twtf? popped %p\n", results1[i].results[0]);
     }
     for(i = 0; i < THREAD_COUNT; i++) {
         if(rvoid2[i] != NULL) {
@@ -509,8 +512,10 @@ int spec003() {
             results2[i].size = 0;
             results2[i].results = NULL;
         }
-        if(results2[i].size > 0 && results2[i].results != NULL)
+        if(results2[i].size > 0 && results2[i].results != NULL && !is_null(results2[i].results[0]))
             found.insert(*results2[i].results[0]);
+        else if(is_null(results2[i].results[0]))
+            fprintf(stdout, "\t\t\twtf? popped %p\n", results2[i].results[0]);
     }
     
     // both hints see exactly the same buffer chain
@@ -668,6 +673,7 @@ void *spec004_helper(void *args_void) {
     wait_on_barrier(barrier);
     results->results[0] = right_pop(test_deque, pop_status);
     assert(pop_status == OK);
+    assert(!is_null(results->results[0]));
     wait_on_barrier(barrier);
     
     pthread_exit((void *) results);
@@ -724,8 +730,10 @@ int spec004() {
             results1[i].size = 0;
             results1[i].results = NULL;
         }
-        if(results1[i].size > 0 && results1[i].results != NULL)
+        if(results1[i].size > 0 && results1[i].results != NULL && !is_null(results1[i].results[0]))
             found.insert(*results1[i].results[0]);
+        else if(is_null(results1[i].results[0]))
+            fprintf(stdout, "\t\t\twtf? popped %p\n", results1[i].results[0]);
     }
     for(i = 0; i < THREAD_COUNT; i++) {
         if(rvoid2[i] != NULL) {
@@ -736,8 +744,10 @@ int spec004() {
             results2[i].size = 0;
             results2[i].results = NULL;
         }
-        if(results2[i].size > 0 && results2[i].results != NULL)
+        if(results2[i].size > 0 && results2[i].results != NULL && !is_null(results2[i].results[0]))
             found.insert(*results2[i].results[0]);
+        else if(is_null(results2[i].results[0]))
+            fprintf(stdout, "\t\t\twtf? popped %p\n", results2[i].results[0]);
     }
     
     // both hints see exactly the same buffer chain
