@@ -13,7 +13,7 @@
 #include "stress.h"
 
 #define DEBUG 0
-#define THREAD_COUNT 50
+#define THREAD_COUNT 2
 #define FREEZE_COUNT 1
 #define N_TRIES      1000
 
@@ -105,6 +105,7 @@ void *rand_ops(void *args_void) {
                 int *random_value = (int *) malloc(sizeof(int));
                 *random_value = (int) value_dist(rand_engine); 
                 if(random_op < 0.25) {
+                    if(DEBUG && THREAD_COUNT <= 4) fprintf(stdout, "\t\tLEFT PUSH\n");
                     left_push(test_deque, random_value, op_status);
                     if(op_status == OK) {
                         stats[id].left_pushes++;
@@ -112,6 +113,7 @@ void *rand_ops(void *args_void) {
                         free(random_value);
                     }
                 } else {
+                    if(DEBUG && THREAD_COUNT <= 4) fprintf(stdout, "\t\tRIGHT PUSH\n");
                     right_push(test_deque, random_value, op_status);
                     if(op_status == OK) {
                         stats[id].right_pushes++;
@@ -123,6 +125,7 @@ void *rand_ops(void *args_void) {
                 // pop op
                 int *popped_value;
                 if(random_op < 0.75) {
+                    if(DEBUG && THREAD_COUNT <= 4) fprintf(stdout, "\t\tLEFT POP\n");
                     popped_value = left_pop(test_deque, op_status);
                     if(op_status == OK) {
                         stats[id].left_pops++;
@@ -131,6 +134,7 @@ void *rand_ops(void *args_void) {
                         //assert(popped_value == NULL);
                     }
                 } else {
+                    if(DEBUG && THREAD_COUNT <= 4) fprintf(stdout, "\t\tRIGHT POP\n");
                     popped_value = right_pop(test_deque, op_status);
                     if(op_status == OK) {
                         stats[id].right_pops++;
@@ -324,9 +328,11 @@ int main(int argc, char *argv[]) {
                     break;
                 case BROKEN_LEFT_SECTION:
                     fprintf(stderr, "\t\t\tError: found non-contiguous LNULLs\n");
+                    dump_queue(test_deque);
                     break;
                 case BROKEN_RIGHT_SECTION:
                     fprintf(stderr, "\t\t\tError: found non-contiguous RNULLs\n");
+                    dump_queue(test_deque);
                     break;
                 case MIXED_LEFT_RIGHT_SECTION:
                     fprintf(stderr, "\t\t\tError: found non-contiguous LNULLs/RNULLs\n");
