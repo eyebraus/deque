@@ -13,9 +13,9 @@
 #include "stress.h"
 
 #define DEBUG 0
-#define THREAD_COUNT 2
+#define THREAD_COUNT 50
 #define FREEZE_COUNT 1
-#define N_TRIES      1000
+#define N_TRIES      10000
 
 using namespace std;
 
@@ -189,7 +189,7 @@ bool is_consistent(deque_t &deque, int &status_code) {
     left_iter = left_buffer_chain.begin();
     right_iter = right_buffer_chain.rbegin();
     while(left_iter != left_buffer_chain.end() && right_iter != right_buffer_chain.rend()) {
-        if(DEBUG) fprintf(stdout, "\tLeft chain: %p, right chain: %p\n", *left_iter, *right_iter);
+        //fprintf(stdout, "\tLeft chain: %p, right chain: %p\n", *left_iter, *right_iter);
         if(*left_iter != *right_iter) {
             status_code = UNREACHABLE;
             return false;
