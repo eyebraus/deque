@@ -156,7 +156,7 @@ int *left_pop(deque_t &deque, int &stat) {
                     if(k.nodes[kcur].compare_exchange_strong(current, cur_new)) {
                         // update loc hint
                         deque_hint_t new_hint;
-                        set_deque_hint(new_hint, next_left, k.index + 1);
+                        set_deque_hint(new_hint, k.nodes, k.index + 1);
                         deque.left_hint.compare_exchange_strong(saved_hint, new_hint);
                         deque.size--;
                         stat = OK;
@@ -333,7 +333,7 @@ int *right_pop(deque_t &deque, int &stat) {
                     if(k.nodes[kcur].compare_exchange_strong(current, cur_new)) {
                         // update loc hint
                         deque_hint_t new_hint;
-                        set_deque_hint(new_hint, next_right, k.index - 1);
+                        set_deque_hint(new_hint, k.nodes, k.index - 1);
                         deque.right_hint.compare_exchange_strong(saved_hint, new_hint);
                         deque.size--;
                         stat = OK;
