@@ -6,46 +6,41 @@
 
 using namespace std;
 
-/*
- * TODOs and stuff
- * ---------------
- *     - actually write oracle function. the hints are, in fact, just hints
- */
-
 void left_push(deque_t &deque, int *elt, int &stat) {
     deque_hint_t k, saved_hint;
     long int kprev, kcur;
     deque_node_t previous, current;
-    bool dumbprint = false;
     
     while(1) {
-        k = oracle(deque, LEFT);
-        saved_hint = deque.left_hint.load();
+        // get head position, load nodes
+        k = left_oracle(deque);
+        saved_hint = deque.left_hint.load(); // for updating hint later
         kprev = mod(k.index + 1, DEF_BOUNDS);
         kcur = mod(k.index, DEF_BOUNDS);
         previous = k.nodes[kprev].load();
         current = k.nodes[kcur].load();
         
+        // note: always attempt to push if current index is at buffer edge
         if(previous.value != LNULL && (current.value == LNULL || kcur == 0)) {
             deque_node_t prev_new, cur_new;
             
+            // at left edge of current buffer, and there is no other buffer to the left
             if(kcur == 0 && current.value == LNULL) {
                 atomic_deque_node_t *buffer;
                 deque_node_t right_edge, value_node;
                 
-                // buffer edge: allocate new buffer, attempt to attach
+                // allocate new buffer, attempt to attach
                 buffer = (atomic_deque_node_t *) malloc(DEF_BOUNDS * sizeof(atomic_deque_node_t));
                 init_buffer(buffer, DEF_BOUNDS, LBUF);
-                // set edge pointer & contents
                 set_deque_node(right_edge, (void *) k.nodes, 0);
                 set_deque_node(value_node, (void *) elt, 0);
                 buffer[DEF_BOUNDS - 1].store(right_edge);
                 buffer[DEF_BOUNDS - 2].store(value_node);
                 
-                // normal swapping case
                 copy_deque_node(prev_new, previous);
                 set_deque_node(cur_new, (void *) buffer, current.count);
                 
+                // make sure no one else has pushed a new buffer
                 if(k.nodes[kprev].compare_exchange_strong(previous, prev_new)) {
                     if(k.nodes[kcur].compare_exchange_strong(current, cur_new)) {
                         // update loc hint
@@ -55,25 +50,19 @@ void left_push(deque_t &deque, int *elt, int &stat) {
                         deque.size++;
                         stat = OK;
                         return;
-                    } else {
-                        // make sure to free unused buffer!
-                        free(buffer);
                     }
-                } else {
-                    free(buffer);
                 }
+                
+                // make sure to free unused buffer!
+                free(buffer);
+            // at left edge of current buffer, and there is another buffer to the left
             } else if(kcur == 0 && current.value != LNULL) {
-                if(dumbprint) {
-                    fprintf(stdout, "\t\t\t\tLeft push says hi\n");
-                    fprintf(stdout, "\t\t\t\t{ nodes: %p, index: %ld }\n", k.nodes, k.index);
-                    dumbprint = false;
-                }
-                // new buffer already allocated, use it!
+                long int kpeek;
                 atomic_deque_node_t *buffer;
-                long int kpeek = mod(k.index - 2, DEF_BOUNDS);
                 deque_node_t left_peek, left_peek_new;
                 
                 buffer = (atomic_deque_node_t *) current.value;
+                kpeek = mod(k.index - 2, DEF_BOUNDS);
                 left_peek = buffer[kpeek].load();
                 
                 // someone already did this push, retry
@@ -83,6 +72,7 @@ void left_push(deque_t &deque, int *elt, int &stat) {
                 copy_deque_node(prev_new, previous);
                 set_deque_node(left_peek_new, (void *) elt, left_peek.count);
                 
+                // make sure no one has done this push or popped behind us
                 if(k.nodes[kprev].compare_exchange_strong(previous, prev_new)) {
                     if(buffer[kpeek].compare_exchange_strong(left_peek, left_peek_new)) {
                         // update loc hint
@@ -94,8 +84,8 @@ void left_push(deque_t &deque, int *elt, int &stat) {
                         return;
                     }
                 }
+            // regular swapping case
             } else {
-                // otherwise do the normal swapping case
                 copy_deque_node(prev_new, previous);
                 set_deque_node(cur_new, (void *) elt, current.count);
                 
@@ -119,32 +109,37 @@ int *left_pop(deque_t &deque, int &stat) {
     deque_hint_t k, saved_hint;
     long int kcur, knext;
     deque_node_t current, next;
-    bool dumbprint = false;
     
     while(1) {
-        k = oracle(deque, LEFT);
+        // get head position, load nodes
+        k = left_oracle(deque);
         saved_hint = deque.left_hint.load();
         kcur = mod(k.index + 1, DEF_BOUNDS);
         knext = mod(k.index, DEF_BOUNDS);
         current = k.nodes[kcur].load();
         next = k.nodes[knext].load();
         
+        // note: knext == 0 condition for when edge points to other buffer
         if(current.value != LNULL && (next.value == LNULL || knext == 0)) {
             deque_node_t cur_new, next_new;
             
+            // emptiness case: right head is right next to left head
+            if(current.value == RNULL && compare_node(k.nodes[kcur], current)) {
+                stat = EMPTY;
+                return NULL;
+            }
+            
+            // at left edge of current buffer, there's another buffer to the left
             if(knext == 0 && next.value != LNULL) {
-                if(current.value == RNULL && compare_node(k.nodes[kcur], current)) {
-                    stat = EMPTY;
-                    return NULL;
-                }
-                
-                // make sure no one's pushing to the next buffer
+                long int kpeek;
                 atomic_deque_node_t *next_left;
-                long int kpeek = mod(k.index - 2, DEF_BOUNDS);
                 deque_node_t left_peek, left_peek_new;
                 
+                // peek over to neighboring buffer
                 next_left = (atomic_deque_node_t *) next.value;
+                kpeek = mod(k.index - 2, DEF_BOUNDS);
                 left_peek = next_left[kpeek].load();
+                
                 // restart if peek val is not LNULL (someone already pushed)
                 if(left_peek.value != LNULL)
                     continue;
@@ -152,6 +147,7 @@ int *left_pop(deque_t &deque, int &stat) {
                 copy_deque_node(left_peek_new, left_peek);
                 set_deque_node(cur_new, LNULL, current.count);
                 
+                // make sure no one pushed to neighboring buffer
                 if(next_left[kpeek].compare_exchange_strong(left_peek, left_peek_new)) {
                     if(k.nodes[kcur].compare_exchange_strong(current, cur_new)) {
                         // update loc hint
@@ -164,11 +160,6 @@ int *left_pop(deque_t &deque, int &stat) {
                     }
                 }
             } else {
-                if(current.value == RNULL && compare_node(k.nodes[kcur], current)) {
-                    stat = EMPTY;
-                    return NULL;
-                }
-                
                 // otherwise, do the normal swap op
                 set_deque_node(cur_new, LNULL, current.count);
                 copy_deque_node(next_new, next);
@@ -193,36 +184,37 @@ void right_push(deque_t &deque, int *elt, int &stat) {
     deque_hint_t k, saved_hint;
     long int kprev, kcur;
     deque_node_t previous, current;
-    bool dumbprint = false;
     
     while(1) {
-        k = oracle(deque, RIGHT);
+        // get head position, load nodes
+        k = right_oracle(deque);
         saved_hint = deque.right_hint.load();
         kprev = mod(k.index - 1, DEF_BOUNDS);
         kcur = mod(k.index, DEF_BOUNDS);
         previous = k.nodes[kprev].load();
         current = k.nodes[kcur].load();
         
+        // note: always attempt to push if current index is at buffer edge
         if(previous.value != RNULL && (current.value == RNULL || kcur == DEF_BOUNDS - 1)) {
             deque_node_t prev_new, cur_new;
             
+            // at right edge of current buffer, and there is no other buffer to the right
             if(kcur == DEF_BOUNDS - 1 && current.value == RNULL) {
                 atomic_deque_node_t *buffer;
                 deque_node_t left_edge, value_node;
                 
-                // buffer edge: allocate new buffer, attempt to attach
+                // allocate new buffer, attempt to attach
                 buffer = (atomic_deque_node_t *) malloc(DEF_BOUNDS * sizeof(atomic_deque_node_t));
                 init_buffer(buffer, DEF_BOUNDS, RBUF);
-                // set edge pointer & contents
                 set_deque_node(left_edge, (void *) k.nodes, 0);
                 set_deque_node(value_node, (void *) elt, 0);
                 buffer[0].store(left_edge);
                 buffer[1].store(value_node);
                 
-                // normal swapping case
                 copy_deque_node(prev_new, previous);
                 set_deque_node(cur_new, (void *) buffer, current.count);
                 
+                // make sure no one else has pushed a new buffer
                 if(k.nodes[kprev].compare_exchange_strong(previous, prev_new)) {
                     if(k.nodes[kcur].compare_exchange_strong(current, cur_new)) {
                         // update loc hint
@@ -232,25 +224,19 @@ void right_push(deque_t &deque, int *elt, int &stat) {
                         deque.size++;
                         stat = OK;
                         return;
-                    } else {
-                        // make sure to free unused buffer!
-                        free(buffer);
                     }
-                } else {
-                    free(buffer);
                 }
+                
+                // make sure to free unused buffer!
+                free(buffer);
+            // at right edge of current buffer, and there is another buffer to the right
             } else if(kcur == DEF_BOUNDS - 1 && current.value != RNULL) {
-                if(dumbprint) {
-                    fprintf(stdout, "\t\t\t\tRight push says hi\n");
-                    fprintf(stdout, "\t\t\t\t{ nodes: %p, index: %ld }\n", k.nodes, k.index);
-                    dumbprint = false;
-                }
-                // new buffer already allocated, use it!
+                long int kpeek;
                 atomic_deque_node_t *buffer;
-                long int kpeek = mod(k.index + 2, DEF_BOUNDS);
                 deque_node_t right_peek, right_peek_new;
                 
                 buffer = (atomic_deque_node_t *) k.nodes[kcur].load().value;
+                kpeek = mod(k.index + 2, DEF_BOUNDS);
                 right_peek = buffer[kpeek].load();
                 
                 // someone already did this push, retry
@@ -260,6 +246,7 @@ void right_push(deque_t &deque, int *elt, int &stat) {
                 copy_deque_node(prev_new, previous);
                 set_deque_node(right_peek_new, (void *) elt, right_peek.count);
                 
+                // make sure no one has done this push or popped behind us
                 if(k.nodes[kprev].compare_exchange_strong(previous, prev_new)) {
                     if(buffer[kpeek].compare_exchange_strong(right_peek, right_peek_new)) {
                         // update loc hint
@@ -271,8 +258,8 @@ void right_push(deque_t &deque, int *elt, int &stat) {
                         return;
                     }
                 }
+            // regular swapping case
             } else {
-                // otherwise do the normal swapping case
                 copy_deque_node(prev_new, previous);
                 set_deque_node(cur_new, (void *) elt, current.count);
                 
@@ -296,39 +283,45 @@ int *right_pop(deque_t &deque, int &stat) {
     deque_hint_t k, saved_hint;
     long int kcur, knext;
     deque_node_t current, next;
-    bool dumbprint = false;
     
     while(1) {
-        k = oracle(deque, RIGHT);
+        // get head position, load nodes
+        k = right_oracle(deque);
         saved_hint = deque.right_hint.load();
         kcur = mod(k.index - 1, DEF_BOUNDS);
         knext = mod(k.index, DEF_BOUNDS);
         current = k.nodes[kcur].load();
         next = k.nodes[knext].load();
         
+        // note: knext == DEF_BOUNDS - 1 condition for when edge points to other buffer
         if(current.value != RNULL && (next.value == RNULL || knext == DEF_BOUNDS - 1)) {
             deque_node_t cur_new, next_new;
             
+            // emptiness case: left head is right next to right head
+            if(current.value == LNULL && compare_node(k.nodes[kcur], current)) {
+                stat = EMPTY;
+                return NULL;
+            }
+            
+            // at right edge of current buffer, there's another buffer to the right
             if(knext == DEF_BOUNDS - 1 && next.value != RNULL) {
-                if(current.value == LNULL && compare_node(k.nodes[kcur], current)) {
-                    stat = EMPTY;
-                    return NULL;
-                }
-                
-                // make sure no one's pushing to the next buffer
+                long int kpeek;
                 atomic_deque_node_t *next_right;
-                long int kpeek = mod(k.index + 2, DEF_BOUNDS);
                 deque_node_t right_peek, right_peek_new;
                 
+                // peek over to neighboring buffer
                 next_right = (atomic_deque_node_t *) next.value;
+                kpeek = mod(k.index + 2, DEF_BOUNDS);
                 right_peek = next_right[kpeek].load();
-                // restart if peek val is not LNULL (someone already pushed)
+                
+                // restart if peek val is not RNULL (someone already pushed)
                 if(right_peek.value != RNULL)
                     continue;
                 
                 copy_deque_node(right_peek_new, right_peek);
                 set_deque_node(cur_new, RNULL, current.count);
                 
+                // make sure no one pushed to neighboring buffer
                 if(next_right[kpeek].compare_exchange_strong(right_peek, right_peek_new)) {
                     if(k.nodes[kcur].compare_exchange_strong(current, cur_new)) {
                         // update loc hint
@@ -341,11 +334,6 @@ int *right_pop(deque_t &deque, int &stat) {
                     }
                 }
             } else {
-                if(current.value == LNULL && compare_node(k.nodes[kcur], current)) {
-                    stat = EMPTY;
-                    return NULL;
-                }
-                
                 // otherwise, do the normal swap op
                 set_deque_node(cur_new, RNULL, current.count);
                 copy_deque_node(next_new, next);
@@ -366,20 +354,13 @@ int *right_pop(deque_t &deque, int &stat) {
     }
 }
 
-deque_hint_t oracle(deque_t &deque, oracle_end deque_end) {
-    if(deque_end == LEFT) {
-        return left_oracle(deque);
-    } else if(deque_end == RIGHT) {
-        return right_oracle(deque);
-    }
-}
-
 deque_hint_t left_oracle(deque_t &deque) {
     deque_hint_t k, new_hint;
     long int i, index, kcur, kprev;
     atomic_deque_node_t *buffer, *next_buffer;
     deque_node_t current, previous, next;
 
+    // load current hint
     k = deque.left_hint.load();
     buffer = k.nodes;
     index = k.index;
@@ -387,8 +368,21 @@ deque_hint_t left_oracle(deque_t &deque) {
     kprev = mod(k.index + 1, DEF_BOUNDS);
     current = buffer[kcur].load();
     previous = buffer[kprev].load();
+    
+    // check if hint was exactly right first!
+    if(kprev != DEF_BOUNDS - 1) {
+        if(current.value == LNULL && previous.value != LNULL)
+            return k;
+        // if buffer chain continues, make sure next buffer is empty
+        if(kcur == 0 && current.value != LNULL && previous.value != LNULL) {
+            next_buffer = (atomic_deque_node_t *) current.value;
+            next = next_buffer[DEF_BOUNDS - 2].load();
+            if(next.value == LNULL)
+                return k;
+        }
+    }
 
-    // find leftmost point then work inward
+    // find leftmost point
     next_buffer = (atomic_deque_node_t *) buffer[0].load().value;
     while((void *) next_buffer != LNULL) {
         buffer = next_buffer;
@@ -397,22 +391,27 @@ deque_hint_t left_oracle(deque_t &deque) {
     }
     index -= mod(index, DEF_BOUNDS);
     
+    // search right until head is found or end is reached
     while((void *) buffer != RNULL) {
         for(i = index; mod(i, DEF_BOUNDS) < DEF_BOUNDS - 1; i++) {
             kcur = mod(i, DEF_BOUNDS);
             kprev = mod(i + 1, DEF_BOUNDS);
             current = buffer[kcur].load();
             previous = buffer[kprev].load();
+            
             // buffer edge hit, but this will be head since chain ends
             if(kprev == DEF_BOUNDS - 1 && current.value == LNULL && previous.value == RNULL) {
                 set_deque_hint(new_hint, buffer, index + mod(i, DEF_BOUNDS));
                 return new_hint;
             }
+            
+            // regular head found case
             if(kprev != DEF_BOUNDS - 1 && (kcur == 0 || current.value == LNULL) && previous.value != LNULL) {
                 set_deque_hint(new_hint, buffer, index + mod(i, DEF_BOUNDS));
                 return new_hint;
             }
         }
+        
         // move on to next buffer
         buffer = (atomic_deque_node_t *) buffer[DEF_BOUNDS - 1].load().value;
         index += DEF_BOUNDS;
@@ -427,6 +426,7 @@ deque_hint_t right_oracle(deque_t &deque) {
     atomic_deque_node_t *buffer, *next_buffer;
     deque_node_t current, previous, next;
 
+    // load current hint
     k = deque.right_hint.load();
     buffer = k.nodes;
     index = k.index;
@@ -434,8 +434,21 @@ deque_hint_t right_oracle(deque_t &deque) {
     kprev = mod(k.index - 1, DEF_BOUNDS);
     current = buffer[kcur].load();
     previous = buffer[kprev].load();
+    
+    // check if hint was exactly right first!
+    if(kprev != 0) {
+        if(current.value == RNULL && previous.value != RNULL)
+            return k;
+        // if buffer chain continues, make sure next buffer is empty
+        if(kcur == DEF_BOUNDS - 1 && current.value != RNULL && previous.value != RNULL) {
+            next_buffer = (atomic_deque_node_t *) current.value;
+            next = next_buffer[1].load();
+            if(next.value == RNULL)
+                return k;
+        }
+    }
 
-    // find rightmost point then work inward
+    // find rightmost point
     next_buffer = (atomic_deque_node_t *) buffer[DEF_BOUNDS - 1].load().value;
     while((void *) next_buffer != RNULL) {
         buffer = next_buffer;
@@ -444,24 +457,28 @@ deque_hint_t right_oracle(deque_t &deque) {
     }
     index -= mod(index, DEF_BOUNDS);
     
+    // search left until head found or deque end
     while((void *) buffer != LNULL) {
         for(i = index + DEF_BOUNDS - 1; mod(i, DEF_BOUNDS) > 0; i--) {
             kcur = mod(i, DEF_BOUNDS);
             kprev = mod(i - 1, DEF_BOUNDS);
             current = buffer[kcur].load();
             previous = buffer[kprev].load();
+            
             // buffer edge hit, but this will be head since chain ends
             if(kprev == 0 && current.value == RNULL && previous.value == LNULL) {
                 set_deque_hint(new_hint, buffer, index + mod(i, DEF_BOUNDS));
                 return new_hint;
             }
+            
+            // regular head found case
             if(kprev != 0 && (kcur == DEF_BOUNDS - 1 || current.value == RNULL) && previous.value != RNULL) {
                 set_deque_hint(new_hint, buffer, index + mod(i, DEF_BOUNDS));
                 return new_hint;
             }
         }
-        // check if right edge is directly ahead on next buffer;
-        // if so we need to straddle buffers
+        
+        // move to next buffer
         buffer = (atomic_deque_node_t *) buffer[0].load().value;
         index -= DEF_BOUNDS;
     }
@@ -495,18 +512,21 @@ void init_buffer(atomic_deque_node_t *buffer, int size, buffer_fill fill) {
     
     for(i = 0; i < size; i++) {
         switch(fill) {
+            // left half LNULL, right half RNULL
             case SPLIT:
                 if(i < size / 2)
                     init_deque_node(buffer[i], LNULL);
                 else 
                     init_deque_node(buffer[i], RNULL);
                 break;
+            // all LNULL except rightmost edge
             case LBUF:
                 if(i < size - 1)
                     init_deque_node(buffer[i], LNULL);
                 else
                     init_deque_node(buffer[i], RNULL);
                 break;
+            // all RNULL except leftmost edge
             case RBUF:
                 if(i > 0)
                     init_deque_node(buffer[i], RNULL);
@@ -522,8 +542,6 @@ void clear_deque_node(atomic_deque_node_t &node) {
     blank_node.value = NULL;
     blank_node.count = 0;
     old_node = node.exchange(blank_node);
-    //if(!is_null(old_node.value))
-    //    free(old_node.value);
 }
 
 void clear_deque(deque_t &deque) {
@@ -531,12 +549,14 @@ void clear_deque(deque_t &deque) {
     atomic_deque_node_t *buffer, *bufsave, *left_next, *right_next;
     deque_hint_t left_hint, right_hint;
     
+    // grab one of the buffers and clear it for reuse
     buffer = deque.left_hint.load().nodes;
     left_next = (atomic_deque_node_t *) buffer[0].load().value;
     right_next = (atomic_deque_node_t *) buffer[DEF_BOUNDS - 1].load().value;
     clear_buffer(buffer, DEF_BOUNDS);
     init_buffer(buffer, DEF_BOUNDS, SPLIT);
     
+    // iterate over all buffers in chian and free them
     left_check = !is_null(left_next);
     bufsave = buffer;
     while(!is_null(left_next) && !is_null(right_next)) {

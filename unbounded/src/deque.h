@@ -68,7 +68,6 @@ void left_push(deque_t &deque, int *elt, int &stat);
 int *left_pop(deque_t &deque, int &stat);
 void right_push(deque_t &deque, int *elt, int &stat);
 int *right_pop(deque_t &deque, int &stat);
-deque_hint_t oracle(deque_t &deque, oracle_end deque_end);
 deque_hint_t left_oracle(deque_t &deque);
 deque_hint_t right_oracle(deque_t &deque);
 

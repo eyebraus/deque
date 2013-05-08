@@ -14,7 +14,7 @@
 
 #define DEBUG 0
 #define THREAD_COUNT 50
-#define FREEZE_COUNT 1
+#define FREEZE_COUNT 100
 #define N_TRIES      10000
 
 using namespace std;
