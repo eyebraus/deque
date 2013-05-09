@@ -24,7 +24,7 @@ TLIBS = $(TSRCS:.cc=.h)
 TOBJS = $(TSRCS:.cc=.o)
 TEXEC = $(TSRCS:%.cc=%)
 
-XSRCS = $(EXP_DIR)/nonblock.cc #$(EXP_DIR)/mutex.cc
+XSRCS = $(EXP_DIR)/nonblock.cc $(EXP_DIR)/mutex.cc
 XLIBS = $(XSRCS:.cc=.h)
 XOBJS = $(XSRCS:.cc=.o)
 XEXEC = $(XSRCS:%.cc=%)

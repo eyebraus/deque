@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <pthread.h>
 #include <random>
 #include <stdio.h>
@@ -12,16 +13,18 @@
 #include <vector>
 #include "../src/deque.h"
 #include "experiment.h"
-#include "nonblock.h"
+#include "mutex.h"
+#include "atomic_ops.h"
 #include "hrtimer/hrtimer_x86.h"
 
 #define DEBUG 0
 
 using namespace std;
 
-deque_t deque;
+deque<int> std_deque;
 pthread_t *threads;
 pthread_barrier_t barrier;
+tas_lock_t lock;
 int thread_count = 1;
 int op_count = 10000;
 int sec_count = 10;
@@ -97,11 +100,12 @@ int main(int argc, char *argv[]) {
     }
     
     // initialize important stuff
-    init_deque(deque);
+    std_deque = deque<int>();
     int boost = experiment == TIMING ? 0 : 1;
     threads = (pthread_t *) malloc(sizeof(pthread_t) * (thread_count + boost));
     pthread_barrier_init(&barrier, NULL, thread_count + boost); 
     result = 0.0;
+    lock = 0;
     
     // perform experiments
     switch(experiment) {
@@ -186,15 +190,14 @@ double throughput_exp() {
 
 void *timing_run(void *args_void) {
     thread_args_t *args;
-    int id, i, *push_ptr, push_status, pop_status;
+    int id, i, push_ptr, push_status, pop_status;
     double start, finish;
     atomic_int ops;
     
     args = (thread_args_t *) args_void;
     id = args->id;
     ops = 0;
-    push_ptr = (int *) malloc(sizeof(int));
-    *push_ptr = 0xbeef;
+    push_ptr = 0xbeef;
     
     // random number stuff
     default_random_engine rand_engine(chrono::system_clock::now().time_since_epoch().count());
@@ -210,7 +213,9 @@ void *timing_run(void *args_void) {
         // phase 1: pushes
         if(id < thread_count / 2) {
             for(i = 0; i < op_count; i++) {
-                left_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_back(push_ptr);
+                tas_release(&lock);
                 ops++;
             }
         }
@@ -218,16 +223,21 @@ void *timing_run(void *args_void) {
         // phase 2: pops
         if(id >= thread_count / 2) {
             for(; ops < op_count;) {
-                left_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_back();
                     ops++;
+                }
+                tas_release(&lock);
             } 
         }
     } else if(workflow == QUEUE) {
         // phase 1: pushes
         if(id < thread_count / 2) {
             for(i = 0; i < op_count; i++) {
-                left_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_front(push_ptr);
+                tas_release(&lock);
                 ops++;
             }
         }
@@ -235,28 +245,44 @@ void *timing_run(void *args_void) {
         // phase 2: pops
         if(id >= thread_count / 2) {
             for(; ops < op_count;) {
-                right_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_back();
                     ops++;
+                }
+                tas_release(&lock);
+                ops++;
             } 
         }
     } else {
         for(; ops < op_count; ) {
             double random_op = op_dist(rand_engine);
             if(random_op < 0.25) {
-                left_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_back(push_ptr);
+                tas_release(&lock);
                 ops++;
             } else if(random_op < 0.5) {
-                right_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_front(push_ptr);
+                tas_release(&lock);
                 ops++;
             } else if(random_op < 0.75) {
-                left_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_back();
                     ops++;
+                }
+                tas_release(&lock);
+                ops++;
             } else {
-                right_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_front();
                     ops++;
+                }
+                tas_release(&lock);
+                ops++;
             }
         }
     }
@@ -275,14 +301,13 @@ void *timing_run(void *args_void) {
 
 void *throughput_run(void *args_void) {
     thread_args_t *args;
-    int id, i, *push_ptr, push_status, pop_status;
+    int id, i, push_ptr, push_status, pop_status;
     atomic_int ops;
     
     args = (thread_args_t *) args_void;
     id = args->id;
     ops = 0;
-    push_ptr = (int *) malloc(sizeof(int));
-    *push_ptr = 0xbeef;
+    push_ptr = 0xbeef;
     
     // random number stuff
     default_random_engine rand_engine(chrono::system_clock::now().time_since_epoch().count());
@@ -296,7 +321,9 @@ void *throughput_run(void *args_void) {
         // phase 1: pushes
         if(id < thread_count / 2) {
             while(!stop) {
-                left_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_back(push_ptr);
+                tas_release(&lock);
                 ops++;
             }
         }
@@ -304,16 +331,22 @@ void *throughput_run(void *args_void) {
         // phase 2: pops
         if(id >= thread_count / 2) {
             while(!stop) {
-                left_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_back();
                     ops++;
+                }
+                tas_release(&lock);
+                ops++;
             } 
         }
     } else if(workflow == QUEUE) {
         // phase 1: pushes
         if(id < thread_count / 2) {
             while(!stop) {
-                left_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_back(push_ptr);
+                tas_release(&lock);
                 ops++;
             }
         }
@@ -321,28 +354,44 @@ void *throughput_run(void *args_void) {
         // phase 2: pops
         if(id >= thread_count / 2) {
             while(!stop) {
-                right_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_front();
                     ops++;
+                }
+                tas_release(&lock);
+                ops++;
             } 
         }
     } else {
         while(!stop) {
             double random_op = op_dist(rand_engine);
             if(random_op < 0.25) {
-                left_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_back(push_ptr);
+                tas_release(&lock);
                 ops++;
             } else if(random_op < 0.5) {
-                right_push(deque, push_ptr, push_status);
+                tas_acquire(&lock);
+                std_deque.push_front(push_ptr);
+                tas_release(&lock);
                 ops++;
             } else if(random_op < 0.75) {
-                left_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_back();
                     ops++;
+                }
+                tas_release(&lock);
+                ops++;
             } else {
-                right_pop(deque, pop_status);
-                if(pop_status == OK)
+                tas_acquire(&lock);
+                if(!std_deque.empty()) {
+                    std_deque.pop_front();
                     ops++;
+                }
+                tas_release(&lock);
+                ops++;
             }
         }
     }
