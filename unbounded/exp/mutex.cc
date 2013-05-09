@@ -32,6 +32,9 @@ experiment_type experiment = TIMING;
 workflow_type workflow = RANDOM;
 extern char *optarg;
 bool stop = false;
+atomic_int all_ops;
+atomic_int push_ops;
+atomic_int pop_ops;
 
 /*
  * experiments:
@@ -102,10 +105,14 @@ int main(int argc, char *argv[]) {
     // initialize important stuff
     std_deque = deque<int>();
     int boost = experiment == TIMING ? 0 : 1;
+    op_count *= thread_count;
     threads = (pthread_t *) malloc(sizeof(pthread_t) * (thread_count + boost));
     pthread_barrier_init(&barrier, NULL, thread_count + boost); 
     result = 0.0;
     lock = 0;
+    all_ops = 0;
+    push_ops = 0;
+    pop_ops = 0;
     
     // perform experiments
     switch(experiment) {
@@ -212,21 +219,21 @@ void *timing_run(void *args_void) {
     if(workflow == STACK) {
         // phase 1: pushes
         if(id < thread_count / 2) {
-            for(i = 0; i < op_count; i++) {
+            for(; push_ops < op_count / 2;) {
                 tas_acquire(&lock);
                 std_deque.push_back(push_ptr);
                 tas_release(&lock);
-                ops++;
+                push_ops++;
             }
         }
         //pthread_barrier_wait(&barrier);
         // phase 2: pops
         if(id >= thread_count / 2) {
-            for(; ops < op_count;) {
+            for(; pop_ops < op_count / 2;) {
                 tas_acquire(&lock);
                 if(!std_deque.empty()) {
                     std_deque.pop_back();
-                    ops++;
+                    pop_ops++;
                 }
                 tas_release(&lock);
             } 
@@ -234,55 +241,53 @@ void *timing_run(void *args_void) {
     } else if(workflow == QUEUE) {
         // phase 1: pushes
         if(id < thread_count / 2) {
-            for(i = 0; i < op_count; i++) {
+            for(; push_ops < op_count / 2;) {
                 tas_acquire(&lock);
                 std_deque.push_front(push_ptr);
                 tas_release(&lock);
-                ops++;
+                push_ops++;
             }
         }
         //pthread_barrier_wait(&barrier);
         // phase 2: pops
         if(id >= thread_count / 2) {
-            for(; ops < op_count;) {
+            for(; pop_ops < op_count / 2;) {
                 tas_acquire(&lock);
                 if(!std_deque.empty()) {
                     std_deque.pop_back();
-                    ops++;
+                    pop_ops++;
                 }
                 tas_release(&lock);
                 ops++;
             } 
         }
     } else {
-        for(; ops < op_count; ) {
+        for(; all_ops < op_count; ) {
             double random_op = op_dist(rand_engine);
             if(random_op < 0.25) {
                 tas_acquire(&lock);
                 std_deque.push_back(push_ptr);
                 tas_release(&lock);
-                ops++;
+                all_ops++;
             } else if(random_op < 0.5) {
                 tas_acquire(&lock);
                 std_deque.push_front(push_ptr);
                 tas_release(&lock);
-                ops++;
+                all_ops++;
             } else if(random_op < 0.75) {
                 tas_acquire(&lock);
                 if(!std_deque.empty()) {
                     std_deque.pop_back();
-                    ops++;
+                    all_ops++;
                 }
                 tas_release(&lock);
-                ops++;
             } else {
                 tas_acquire(&lock);
                 if(!std_deque.empty()) {
                     std_deque.pop_front();
-                    ops++;
+                    all_ops++;
                 }
                 tas_release(&lock);
-                ops++;
             }
         }
     }

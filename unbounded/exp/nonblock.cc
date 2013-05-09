@@ -29,6 +29,9 @@ experiment_type experiment = TIMING;
 workflow_type workflow = RANDOM;
 extern char *optarg;
 bool stop = false;
+atomic_int all_ops;
+atomic_int push_ops;
+atomic_int pop_ops;
 
 /*
  * experiments:
@@ -99,9 +102,13 @@ int main(int argc, char *argv[]) {
     // initialize important stuff
     init_deque(deque);
     int boost = experiment == TIMING ? 0 : 1;
+    op_count *= thread_count;
     threads = (pthread_t *) malloc(sizeof(pthread_t) * (thread_count + boost));
     pthread_barrier_init(&barrier, NULL, thread_count + boost); 
     result = 0.0;
+    all_ops = 0;
+    push_ops = 0;
+    pop_ops = 0;
     
     // perform experiments
     switch(experiment) {
@@ -188,11 +195,9 @@ void *timing_run(void *args_void) {
     thread_args_t *args;
     int id, i, *push_ptr, push_status, pop_status;
     double start, finish;
-    atomic_int ops;
     
     args = (thread_args_t *) args_void;
     id = args->id;
-    ops = 0;
     push_ptr = (int *) malloc(sizeof(int));
     *push_ptr = 0xbeef;
     
@@ -209,54 +214,54 @@ void *timing_run(void *args_void) {
     if(workflow == STACK) {
         // phase 1: pushes
         if(id < thread_count / 2) {
-            for(i = 0; i < op_count; i++) {
+            for(; push_ops < op_count / 2;) {
                 left_push(deque, push_ptr, push_status);
-                ops++;
+                push_ops++;
             }
         }
         //pthread_barrier_wait(&barrier);
         // phase 2: pops
         if(id >= thread_count / 2) {
-            for(; ops < op_count;) {
+            for(; pop_ops < op_count / 2;) {
                 left_pop(deque, pop_status);
                 if(pop_status == OK)
-                    ops++;
+                    pop_ops++;
             } 
         }
     } else if(workflow == QUEUE) {
         // phase 1: pushes
         if(id < thread_count / 2) {
-            for(i = 0; i < op_count; i++) {
+            for(; push_ops < op_count / 2;) {
                 left_push(deque, push_ptr, push_status);
-                ops++;
+                push_ops++;
             }
         }
         //pthread_barrier_wait(&barrier);
         // phase 2: pops
         if(id >= thread_count / 2) {
-            for(; ops < op_count;) {
+            for(; pop_ops < op_count / 2;) {
                 right_pop(deque, pop_status);
                 if(pop_status == OK)
-                    ops++;
+                    pop_ops++;
             } 
         }
     } else {
-        for(; ops < op_count; ) {
+        for(; all_ops < op_count; ) {
             double random_op = op_dist(rand_engine);
             if(random_op < 0.25) {
                 left_push(deque, push_ptr, push_status);
-                ops++;
+                all_ops++;
             } else if(random_op < 0.5) {
                 right_push(deque, push_ptr, push_status);
-                ops++;
+                all_ops++;
             } else if(random_op < 0.75) {
                 left_pop(deque, pop_status);
                 if(pop_status == OK)
-                    ops++;
+                    all_ops++;
             } else {
                 right_pop(deque, pop_status);
                 if(pop_status == OK)
-                    ops++;
+                    all_ops++;
             }
         }
     }
