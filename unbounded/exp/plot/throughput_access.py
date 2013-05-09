@@ -23,7 +23,7 @@ if __name__ == "__main__":
     # also plot sequential
     for proc in proc_counts:
         for trial in range(5):
-            filename = "../results/nonblock_timing_stack_%d_%d.out" % (proc, trial + 1)
+            filename = "../results/nonblock_throughput_stack_%d_%d.out" % (proc, trial + 1)
             try:
                 with open(filename) as outfile:
                     for line in outfile:
@@ -31,7 +31,7 @@ if __name__ == "__main__":
                         stack_data[proc] += [exec_time]
             except IOError as e:
                 print "No file %s, skipping..." % filename
-            filename = "../results/nonblock_timing_queue_%d_%d.out" % (proc, trial + 1)
+            filename = "../results/nonblock_throughput_queue_%d_%d.out" % (proc, trial + 1)
             try:
                 with open(filename) as outfile:
                     for line in outfile:
@@ -39,7 +39,7 @@ if __name__ == "__main__":
                         queue_data[proc] += [exec_time]
             except IOError as e:
                 print "No file %s, skipping..." % filename
-            filename = "../results/nonblock_timing_random_%d_%d.out" % (proc, trial + 1)
+            filename = "../results/nonblock_throughput_random_%d_%d.out" % (proc, trial + 1)
             try:
                 with open(filename) as outfile:
                     for line in outfile:
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     figure = plt.figure()
     axes = figure.add_subplot(111)
     axes.set_xlabel("Thread Count")
-    axes.set_ylabel("Execution Time (ms)")
+    axes.set_ylabel("Throughput (ops / ms)")
     #axes.set_xticks([0] + sizes)
     axes.set_xscale('log')
     axes.set_yscale('log')
@@ -88,5 +88,5 @@ if __name__ == "__main__":
     handles, labels = axes.get_legend_handles_labels()
     axes.legend(handles, labels, loc = 2, prop = { 'size': 16 })
     axes.grid(True)
-    plot_path = "access_timing.pdf"
+    plot_path = "access_throughput.pdf"
     plt.savefig(plot_path, dpi = 250, bbox_inches='tight', pad_inches=0.5, transparent=False)
