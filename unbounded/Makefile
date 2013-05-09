@@ -23,9 +23,14 @@ TLIBS = $(TSRCS:.cc=.h)
 TOBJS = $(TSRCS:.cc=.o)
 TEXEC = $(TSRCS:%.cc=%)
 
-SRCS = $(DSRCS) $(ESRCS) $(TSRCS)
-OBJS = $(DOBJS) $(EOBJS) $(TOBJS)
-EXECS = $(EEXEC) $(TEXEC)
+XSRCS = $(EXP_DIR)/nonblock.cc $(EXP_DIR)/mutex.cc
+XLIBS = $(XSRCS:.cc=.h)
+XOBJS = $(XSRCS:.cc=.o)
+XEXEC = $(XSRCS:%.cc=%)
+
+SRCS = $(DSRCS) $(ESRCS) $(TSRCS) $(XSRCS)
+OBJS = $(DOBJS) $(EOBJS) $(TOBJS) $(XOBJS)
+EXECS = $(EEXEC) $(TEXEC) $(XEXEC)
 
 all: $(EEXEC) $(TEXEC)
 
@@ -40,6 +45,15 @@ $(TEST_DIR)/concurrent: $(DOBJS) $(TEST_DIR)/concurrent.o
 
 $(TEST_DIR)/stress: $(DOBJS) $(TEST_DIR)/stress.o 
 	$(CC) $(LDFLAGS) -o $@ $^ -D_XOPEN_SOURCE=600 -pthread
+
+$(EXP_DIR)/mutex: $(DOBJS) $(EXP_DIR)/mutex.o $(EXP_DIR)/hrtimer/hrtimer_x86.o
+	$(CC) $(LDFLAGS) -o $@ $^ -D_XOPEN_SOURCE=600 -pthread
+
+$(EXP_DIR)/nonblock: $(DOBJS) $(EXP_DIR)/nonblock.o $(EXP_DIR)/hrtimer/hrtimer_x86.o
+	$(CC) $(LDFLAGS) -o $@ $^ -D_XOPEN_SOURCE=600 -pthread
+
+$(EXP_DIR)/hrtimer/hrtimer_x86.o: $(EXP_DIR)/hrtimer/hrtimer_x86.cc $(EXP_DIR)/hrtimer/hrtimer_x86.h
+	$(CC) $(CCFLAGS) $< -o $@ 
 
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cc $(SRC_DIR)/%.h
 	$(CC) $(CCFLAGS) $(SRC_DIR)/$*.cc -o $@
