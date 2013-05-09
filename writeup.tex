@@ -6,14 +6,14 @@
 \geometry{margin={1.25in, 1.25in}}
 
 \title{An Algorithm for Obstruction-free Double-Ended Queues}
-\author{Sean Brennan}
+\author{Sean Brennan \\ Advised by Michael Scott}
 \date{May 1, 2013}
 
 \begin{document}
     \maketitle
 
     \begin{abstract}
-        This paper describes a nonblocking algorithm for implementing a data structure known as a double-ended queue. There have only been a handful of algorithms for nonblocking deques, each of which has deficiencies including boundedness of size, reduced concurrency, and a need for special atomic primitives. With the help of Michael Scott, I have devised a new approach built off of prior work from Herlihy et al. that achieves four highly desirable properties: \emph{unboundedness}, \emph{space efficiency}, \emph{high concurrency}, and finally \emph{obstruction-freedom}. Some preliminary analysis shows that this nonblocking double-ended queue can provide significantly higher throughput than a similar algorithm using mutual exclusion.
+        This paper describes a nonblocking algorithm for implementing a data structure known as a double-ended queue. There have only been a handful of algorithms for nonblocking deques, each of which has deficiencies including boundedness of size, reduced concurrency, and a need for special atomic primitives. With the help of Michael Scott, I have devised a new approach built off of prior work from Herlihy et al. that achieves four highly desirable properties: \emph{unboundedness}, \emph{space efficiency}, \emph{high concurrency}, and finally \emph{obstruction-freedom}. Performance analysis shows that this nonblocking double-ended queue can begin to provide higher throughput than a similar algorithm using mutual exclusion, though there is still room for improvement.
     \end{abstract}
 
     \section{Introduction}
@@ -103,15 +103,17 @@ rightpop()
             Figure \ref{code::bounded} shows some example code from the original Herlihy et al. paper. Note the possibility of livelock. A thread pushing right is preempted right after its first CAS. Another thread attempts to do a right pop and is then preempted after its first CAS. The first thread wakes up, fails on its second CAS, and retries, succeeding again in its first CAS. This causes the second thread to fail its second CAS, ad infinitum.
 
         \subsection{Unbounded Description}
-            Fortunately, this deque algorithm is easily extended to provide unboundedness. The general intuition is that we can use the already ``empty'' boundary nodes to store pointers to other buffers. This creates a doubly-linked list of buffers that can be easily traversed to find the heads of the deque. Just like pointers to deque values, pointers to other buffers can be atomically stored in a node entry with a compare-and-swap. Please refer to figure \ref{code::bounded} for more detailed pseudo-code of the algorithm.
+            Fortunately, this deque algorithm is easily extended to provide unboundedness. The general intuition is that we can use the already ``empty'' boundary nodes to store pointers to other buffers. This creates a doubly-linked list of buffers that can be easily traversed to find the heads of the deque. Just like pointers to deque values, pointers to other buffers can be atomically stored in a node entry with a compare-and-swap. Please refer to figures \ref{code::unbounded-push} and \ref{code::unbounded-pop} for more detailed pseudo-code of the algorithm.
 
             The deque is structured somewhat differently from the original algorithm. Importantly, left and right hints are stored as structures containing a pointer to a buffer and an index within that buffer. These hints can also be modified atomically using compare-and-swap. This technique is used to keep these hints ``fairly accurate'': the hint could still be incorrect, but an update is attempted after every successful operation.
 
-            These new features mean the algorithm is now slightly more complex. During a push, we have to consider the case where there is no more space to expand in the current buffer. The extension here is easy: we simply allocate and initialize a buffer of the appropriate size. Additionally, since the buffer is only visible locally to the thread, we can immediately store the new value and backpointer to the old buffer in the proper locations. We then do two CAS operations to insert the pointer to the new buffer, just as we did to insert a new value.
+            These new features mean the algorithm is now slightly more complex. During a push, we have to consider two new cases. In the first, we are out of space to expand in the current buffer. The extension here is easy: we simply allocate and initialize a buffer of the appropriate size. Additionally, since the buffer is only visible locally to the thread, we can immediately store the new value and backpointer to the old buffer without a full read-modify-write. We then do two CAS operations to insert the pointer to the new buffer, just as we did to insert a new value. In the second case, there is space in an adjacent buffer but not the current one. We must then load the neighbor buffer's address from the edge node and ``straddle'' the buffers to perform our operation. The push operation has to ensure in this case that no push happens on the neighbor buffer on top of checking for a conflicting pop.
 
-            Popping is slightly trickier. When the head is about to pop off the current empty buffer, we have to look ahead to the next buffer to find the value to be popped. There is also an extra emptiness case we have to consider, which I call ``buffer straddling,'' where the left head sits at the right end of one buffer and the right head sits at the left head of an adjacent buffer. The first CAS in this new case ensures that no other threads have pushed at the current head. The second CAS must be performed on the adjacent buffer, and ensures that no other thread has popped from it as well.
+            Popping also changes slightly in this version, but also not by much. There is one extra case to consider: the right head is currently on the right edge of some buffer (or left head, left edge). In this case, we must also ``straddle'' buffers. Again we load the neighboring buffer via the edge node, and perform our update in the absence of a push to the neighboring buffer and pop from the current buffer.
 
-            The oracle function I implemented for this deque uses either hint as a starting point for a full search of the structure. While this could theoretically run in time linear to the size of the deque, with ``fairly accurate'' hints it is more likely to find the real head sooner rather than later. However, it might be more appropriate for larger deques to use an oracle function that could make better worst-case guarantees.
+            Importantly, these new cases in the extended algorithm never require more than two compare-and-swaps. This means the extended algorithm does not increase the maximum number of read-modify-write instructions that must be performed to complete a given operation.
+
+            The oracle function I implemented for this deque uses either hint as a starting point for a full search of the structure. While this could theoretically run in time linear to the size of the deque, with ``fairly accurate'' hints we can avoid the search penalty in many cases. However, this only occasional penalty can be quite substantial when the deque is large enough. This issue will be discussed in later sections.
 
     \section{Properties}        
         \subsection{Unboundedness}
@@ -126,24 +128,67 @@ rightpop()
         \subsection{Space Efficiency}
             Unfortunately, this algorithm as currently described is not space efficient across all access patterns. For example, a typical queue-like access pattern would keep allocating new buffers and fail to re-use old empty ones. Though I have not done so yet, I am planning to explore some variation on Maged Michael's hazard pointers to solve this problem \cite{hazard}. To keep it brief, hazard pointers track which threads have references to what memory locations using a single-writer multireader protocol. Periodically, a thread will check its retired list to see if any other threads still refer to its retired pointers. If not, it can safely reuse or reclaim that memory.
 
-    \section{Preliminary Results}
-        I am still working out some implementation-specific bugs in my unbounded deque code, so I do not have many performance results for it yet. However, I do have some preliminary results that motivate what I am doing. These results were obtained by running the programs on cycle2 in the undergraduate network. This machine has 24 hardware contexts for execution and 25 gigabytes of RAM. Each core is 2.8 GHz with a 12 MB cache; the operating system is Red Hat 4.7.2-2.
+    \section{Results}
+        These results were obtained on Algonquin in the undergraduate network and Hylan nonmajor's lab. This machine has 4 cores, each a 3.30 GHz i5-2500 from Intel with 6144 KB of cache. It has 4 GB of RAM in total. The operating system is Red Hat 4.7.2-2.
 
-        A well-known issue with many spin lock implementations is their poor scalability due to resource contention. For example, a naive test-and-set lock will generate egregious amounts of bus traffic due to constant writing and frequent cache invalidations. This kind of behavior could cause unacceptable performance penalties, especially in algorithms where every operation on a data structure requires the same mutex lock and operations tend to be short and frequent.
+        My goals in these experiments were twofold. First, I wanted to demonstrate that my unbounded obstruction-free deque can perform better than a counterpart that uses mutual exclusion locks to serialize all updates to the data structure. Second, I wanted to demonstrate how different and varied access patterns can affect performance of my deque.
 
-        While the nonblocking deque still exhibits contention between threads accessing the same deque end, there is no such contention for access to the entire structure itself. Additionally, by having both ends of the deque concurrent with respect to each other in most cases, there is an opportunity for increased throughput of operations.
+        To prove these points, I set up an experimental framework for both locking and obstruction-free deques that allows the experimenter to control variables such as thread count, problem size, and the access pattern to test over. This framework allows for two metrics: raw execution time of the algorithm and average throughput of all threads. The former metric interprets the ``problem size'' variable as the number of operations to be performed by all threads and times how long it takes for all threads to complete their operations. The latter metric interprets the ``problem size'' as a fixed time interval and checks how many operations were performed over this period.
 
-        Figure \ref{figure::deque-plot} shows the throughput in operations per millisecond of my bounded nonblocking deque algorithm vs. the same data structure guarded by a naive test-and-set lock. The purely nonblocking version shows consistently better throughput results even as the number of threads increases and begins to exceed the number of cores. The testing methodology consisted of each thread performing pushes on both sides until the deque was full, then performing pops on both sides until the deque was empty, and repeating this process until approximately 10 seconds had elapsed.
+        The three common access patterns experimented over are these: the ``stack'' access pattern, in which threads push and pop only to one side; the ``queue'' access pattern, in which threads push to one side and pop from the other; and the ``random'' access pattern, in which threads randomly select their next operation. These access patterns are differentiated primarily by the amount of inter-end concurrency they enable: stack enables practically none, queue enables as much as possible, and random is somewhere between the two on average.
 
         \begin{figure}[t!]
-            \includegraphics[width=0.5\textwidth]{herlihy/exp/throughput_push.pdf}
-            \includegraphics[width=0.5\textwidth]{herlihy/exp/throughput_pop.pdf}
-            \caption{Throughput of my bounded double-ended queue with a naive test-and-set lock, compared with the throughput of my nonblocking double-ended queue. Left: push operations, right: pop operations.}
-            \label{figure::deque-plot}
+            \includegraphics[width=0.5\textwidth]{unbounded/exp/plot/access_timing.pdf}
+            \includegraphics[width=0.5\textwidth]{unbounded/exp/plot/access_throughput.pdf}
+            \caption{Execution times (left) and average throughputs (right) of common access patterns in my deque implementation. Note the logarithmic scale in the y-axis.}
+            \label{figure::access-plot}
         \end{figure}
 
-        In a future edition of this paper, I hope to have similar results for the unbounded deque, as well as some comparisons between space utilization in a large bounded deque vs. an unbounded deque with small buffers.
+        \subsection{Exclusively Nonblocking Performance}
+            Figure \ref{figure::access-plot} shows timing and throughput results for all three access patterns over an array of thread counts, with stack in red, queue in blue, and random in green. The results for stack and random are intuitive, since stack will tend to have more conflicting updates and therefore take longer to execute on average than random. I was rather perplexed by the results for queue, however. It seemed to me that this should have the best performance, if anything, and certainly not the worst.
 
+            I used the gprof tool to track the amount of time each access pattern spent in different deque operations. I found that, while stack and random would spend approximately equal amounts of time on their operations, queue was spending a disproportionate amount of time in \emph{right\_pop}, specifically \emph{right\_oracle}. It seemed like the time taken to find the head was dominating the entire algorithm.
+
+            This goes back to my previous discussion about the oracle function: mine tries to be right most of the time through ``fairly accurate'' hints, but can suffer huge penalties when these hits are wrong. Since the queue pattern is always moving to the left, in this case, the algorithm will continue leaving more and more empty space to the right. This increases the amount of space the oracle might have to cover if its first guess is wrong.
+
+            There are two solutions to this problem. The first and most obvious is to write a more sophisticated oracle function that can make better worst-case performance guarantees. I attempted to write an oracle that inferred the direction it needed to look for the head based on the contents it currently saw (e.g. if current and previous are LN, search right). However, this venture didn't pan out in time for project completion. Another solution to this problem is to remove very old empty buffers from the deque, thus reducing the amount the oracle has to search. This relates back to my brief discussion of Michael's hazard pointers \cite{hazard}.
+
+        \begin{figure}[t!]
+            \includegraphics[width=0.5\textwidth]{unbounded/exp/plot/comp_timing_stack.pdf}
+            \includegraphics[width=0.5\textwidth]{unbounded/exp/plot/comp_timing_random.pdf}
+            \caption{A comparison of execution times between locking and nonblocking deques in the stack access pattern (left) and random access pattern (right).}
+            \label{figure::timecomp-plot}
+        \end{figure}
+
+        \subsection{Locking vs. Nonblocking Performance}
+            With access patterns thoroughly dissected in the previous section, it is time to move on to comparing a locking deque to my new obstruction-free deque. Since performance proved to be very bad for the queue access pattern in the previous section, I decided to focus purely on stack and random access patterns for this analysis.
+
+            Figure \ref{figure::timecomp-plot} contrasts the execution times of stack and random access patterns in both locking and obstruction-free contexts. The stack access pattern in the obstruction-free algorith shows poorer execution time scaling than its corresponding lock-based algorithm. This is unsurprising, given that constant attempts to push or pop from the same side will force threads to step on each others' toes.
+
+            However, the plot comparing the random access pattern between lock-based and obstruction-free algorithms gives reason for hope. The random access pattern here shaves off extra milliseconds here by exploiting inter-end concurrency, which the lock-based version is not able to do, and by reducing the severity of oracle penalties by not expanding too far out.
+
+            Figure \ref{figure::thru-plot} also demonstrates how the throughput of the obstruction-free algorithm scales better in both the stack and random access patterns. This result may seem counter-intuitive given that obstruction-free stack access was shown to scale poorly execution-time wise. One thing to note is that the execution time's experimental methodology ensures that there will always be an equal number of pushes and pops in the stack access pattern. In contrast, the throughput methodology makes no such guarantee, leaving threads to attempt as many operations on the deque in the time frame allotted.
+
+            This improved scaling in both cases is probably due to the well-known problem of contention for naive test-and-set locks. Since test-and-set requires all participants to write to the same location in memory, the interconnect is constantly bogged down with write traffic. When the lock is finally freed, all processors rush to grab it, and only one succeeds. This problem obviously scales quite badly with the number of participating processors.
+
+            While individual deque operations will contend with each other in the obstruction-free deque, it is rarely the case that most or all of them contend on the exact same memory location for an extended period of time. This means the chance of creating a memory ``hot spot'' that can seriously degrade performance is extremely low, and thus the nonblocking approach will scale much better with the number of processes. This seems to be true especially when the number of threads begins to exceed the number of processors available.
+
+        \begin{figure}[t!]
+            \includegraphics[width=0.5\textwidth]{unbounded/exp/plot/comp_throughput_stack.pdf}
+            \includegraphics[width=0.5\textwidth]{unbounded/exp/plot/comp_throughput_random.pdf}
+            \caption{A comparison of throughputs between locking and nonblocking deques in the stack access pattern (left) and random access pattern (right).}
+            \label{figure::thru-plot}
+        \end{figure}
+
+    \section{Future Work}
+        As previously discussed, the most serious performance setbacks in this current algorithm are a high-penalty oracle function and poor space efficiency in certain access patterns. The former has a rather straightforward solution that I am unfortunately unable to implement myself due to time constraints. From inspecting a current incorrect hint, it is possible to figure out in which direction to search for the head, assuming that the deque is in a consistent state. Using this heuristic could greatly improve worst-case performance of the oracle. It could also be that using an entirely different scheme for hints could make writing a more performant oracle function easier.
+
+        Of course, the current oracle's penalty would also be reduced through better management of older empty buffers. To make the algorithm more space-efficient as well, it is possible to write an obstruction-free (or even lock-free) garbage collection and memory management module for the deque, based on Michael's hazard pointers \cite{hazard}. Threads in this system would speculatively try to release buffers that they have observed to be empty, only committing them for reuse once they are sure that no other thread has a reference to them. These reclaimed buffers could then be reused when a new buffer is called for, or have their memory freed after a certain amount of time.
+
+    \bibliographystyle{plain}
+    \bibliography{citations}
+
+    \newpage
         \begin{figure}[t!]
             \footnotesize\begin{verbatim}
 node = { void *val, int ctr };
@@ -155,13 +200,23 @@ rightpush(v) // v is not RN or LN
          k := oracle(right); // find index of leftmost RN
          prev := k.nodes[k.index - 1]; // read (supposed) rightmost non-RN value
          cur := k.nodes[k.index]; // read (supposed) leftmost RN value
-         if (prev.val != RN and cur.val = RN) { // oracle is right
-             if(k.index == SIZE - 1) { // need more space
+         if (prev.val != RN and (cur.val = RN or k.index = SIZE - 1)) { // oracle is right
+             if(k.index == SIZE - 1 and cur.val == RN) { // need more space
                  buffer = new node[SIZE]
                  buffer[0].val = k.nodes
                  buffer[1].val = v
                  if CAS(&k.nodes[k.index - 1], prev, <prev.val, prev.ctr + 1>)
                      if CAS(&k.nodes[k.index], cur, <buffer, cur.ctr + 1>)
+                         update_hints(right, buffer, k.index + 3)
+                         return "ok"
+             } else if(k.index == SIZE - 1 and cur.val != RN) {
+                 buffer = cur.val
+                 peek = buffer[k.index + 2]
+                 if(peek.val != RN)
+                     continue
+                 // ensure no one pushes on neighboring right buffer + no one pops on current buffer
+                 if CAS(&k.nodes[k.index - 1], prev, <prev.val, prev.ctr + 1>)
+                     if CAS(&buffer[k.index + 2], peek, <v, peek.ctr + 1>)
                          update_hints(right, buffer, k.index + 3)
                          return "ok"
              } else {
@@ -172,21 +227,36 @@ rightpush(v) // v is not RN or LN
              } // end if (prev.val != RN and cur.val = RN)
          }
      } // end while
+            \end{verbatim}
+            \caption{Pseudo-code of a novel unbounded deque push. Left operations are completely symmetrical with right operations.}
+            \label{code::unbounded-push}
+        \end{figure}
+
+        \begin{figure}[t!]
+            \footnotesize\begin{verbatim}
+node = { void *val, int ctr };
+hint = { node *nodes, int index };
+deque = { hint left, hint right };
+
 rightpop()
      while (true) { // keep trying till return val or empty
          k := oracle(right); // find index of leftmost RN
          cur := k.nodes[k.index - 1]; // read (supposed) value to be popped
          next := k.nodes[k.index]; // read (supposed) leftmost RN
-         if (cur.val != RN and next.val = RN) { // oracle is right
-             if(k.index - 1 == 0) { // need to transfer to next buffer
-                 next_left = k.nodes[k.index - 1].val
-                 left_cur = next_left[k.index - 3]
-                 if(left_cur.val == LN && next_left[k.index - 3] = left_cur)
-                     return empty
-                 if CAS(&k.nodes[k.index], next, <next.val, next.ctr + 1>)
-                     if CAS(&next_left[k.index - 3], left_cur, <left_cur.val, left_cur.ctr + 1>)
-                         update_hints(right, k.nodes, k.index - 3)
-                         return left_cur.val
+         if (cur.val != RN and (next.val = RN or k.index = SIZE - 1)) { // oracle is right
+             if (cur.val = LN and k.nodes[k.index - 1] = cur) // adjacent LN and RN
+                 return "empty"
+
+             if(k.index == SIZE - 1 and next.val != RN) { 
+                 buffer = next.value
+                 peek = buffer[k.index + 2]
+                 if(peek.val != RN)
+                     continue
+                 // ensure no one pops on current buffer + pushes to neighboring buffer
+                 if CAS(&buffer[k.index + 2], peek, <peek.val, peek.ctr + 1>)
+                     if CAS(&k.nodes[k.index - 1], cur, <RN, cur.ctr + 1>)
+                         update_hints(right, k.nodes, k.index - 1)
+                         return cur.val
              } else {
                  if (cur.val = LN and k.nodes[k,index - 1] = cur)"; // adjacent LN and RN
                      return "empty
@@ -198,11 +268,7 @@ rightpop()
          } // end if (cur.val != RN and next.val = RN)
      } // end while
             \end{verbatim}
-            \caption{Pseudo-code of a novel unbounded deque. Left operations are completely symmetrical with right operations.}
-            \label{code::bounded}
+            \caption{Pseudo-code of a novel unbounded deque pop. Left operations are completely symmetrical with right operations.}
+            \label{code::unbounded-pop}
         \end{figure}
-
-    \newpage
-    \bibliographystyle{plain}
-    \bibliography{citations}
 \end{document}

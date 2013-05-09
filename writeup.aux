@@ -2,9 +2,9 @@
 \@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Nonblocking Algorithms}{1}}
 \citation{michael}
-\citation{herlihy}
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Double-Ended Queues}{2}}
 \@writefile{toc}{\contentsline {section}{\numberline {2}Previous Work}{2}}
+\citation{herlihy}
 \citation{afek}
 \citation{herlihy}
 \citation{herlihy}
@@ -14,20 +14,31 @@
 \@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Pseudo-code of the original bounded deque from the Herlihy et al. paper \cite  {herlihy}. Left operations are completely symmetrical with right operations.}}{4}}
 \newlabel{code::bounded}{{1}{4}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Unbounded Description}{5}}
-\@writefile{toc}{\contentsline {section}{\numberline {4}Properties}{5}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Unboundedness}{5}}
 \citation{hazard}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Properties}{6}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Unboundedness}{6}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Obstruction Freedom}{6}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.3}End Concurrency}{6}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Space Efficiency}{6}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Preliminary Results}{6}}
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Throughput of my bounded double-ended queue with a naive test-and-set lock, compared with the throughput of my nonblocking double-ended queue. Left: push operations, right: pop operations.}}{7}}
-\newlabel{figure::deque-plot}{{2}{7}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Results}{6}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Execution times (left) and average throughputs (right) of common access patterns in my deque implementation. Note the logarithmic scale in the y-axis.}}{7}}
+\newlabel{figure::access-plot}{{2}{7}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Exclusively Nonblocking Performance}{7}}
+\citation{hazard}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces A comparison of execution times between locking and nonblocking deques in the stack access pattern (left) and random access pattern (right).}}{8}}
+\newlabel{figure::timecomp-plot}{{3}{8}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Locking vs. Nonblocking Performance}{8}}
+\citation{hazard}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces A comparison of throughputs between locking and nonblocking deques in the stack access pattern (left) and random access pattern (right).}}{9}}
+\newlabel{figure::thru-plot}{{4}{9}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Future Work}{9}}
 \bibstyle{plain}
 \bibdata{citations}
 \bibcite{herlihy}{1}
 \bibcite{michael}{2}
 \bibcite{hazard}{3}
 \bibcite{afek}{4}
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Pseudo-code of a novel unbounded deque. Left operations are completely symmetrical with right operations.}}{9}}
-\newlabel{code::bounded}{{3}{9}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Pseudo-code of a novel unbounded deque push. Left operations are completely symmetrical with right operations.}}{11}}
+\newlabel{code::unbounded-push}{{5}{11}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Pseudo-code of a novel unbounded deque pop. Left operations are completely symmetrical with right operations.}}{12}}
+\newlabel{code::unbounded-pop}{{6}{12}}

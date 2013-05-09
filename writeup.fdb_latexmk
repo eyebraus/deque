@@ -1,13 +1,13 @@
 # Fdb version 3
-["bibtex writeup"] 1367477764 "writeup.aux" "writeup.bbl" "writeup" 1367477765
+["bibtex writeup"] 1368097562 "writeup.aux" "writeup.bbl" "writeup" 1368098540
   "/usr/local/texlive/2012/texmf-dist/bibtex/bst/base/plain.bst" 1292289607 20613 bd3fbfa9f64872b81ac57a0dd2ed855f ""
   "citations.bib" 1367459479 1838 a0072ebb84a398baa1e80e8363ad3240 ""
-  "writeup.aux" 1367477765 2094 f28854620fec34ac1afedcef6081008e ""
+  "writeup.aux" 1368098540 3107 b4161e2e06b21ccdbba81a3e8b40b07d ""
   "writeup.bcf" 0 -1 0 ""
   (generated)
   "writeup.bbl"
   "writeup.blg"
-["pdflatex"] 1367477764 "writeup.tex" "writeup.pdf" "writeup" 1367477765
+["pdflatex"] 1368098540 "writeup.tex" "writeup.pdf" "writeup" 1368098540
   "/usr/local/texlive/2012/texmf-dist/fonts/map/fontname/texfonts.map" 1272929888 3287 e6b82fe08f5336d4d5ebc73fb1152e87 ""
   "/usr/local/texlive/2012/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm" 1136768653 1328 c834bbb027764024c09d3d2bf908b5f0 ""
   "/usr/local/texlive/2012/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm" 1136768653 1324 c910af8c371558dc20f2d7822f66fe64 ""
@@ -62,11 +62,15 @@
   "/usr/local/texlive/2012/texmf-var/web2c/pdftex/pdflatex.fmt" 1341108725 3691572 80746d7cec090b0770bc87079bef471d ""
   "/usr/local/texlive/2012/texmf.cnf" 1341108668 572 7ea7194897937febeb63145e1c3a1f03 ""
   "/usr/local/texlive/2012/texmf/web2c/texmf.cnf" 1336865692 31299 729e216d9b945005c0d4b079c0500bc9 ""
-  "herlihy/exp/throughput_pop.pdf" 1367458785 14888 58966c4ecc937c27cbc05381d0521a2f ""
-  "herlihy/exp/throughput_push.pdf" 1367458783 14883 f78214f2a651b6bd728b3569000fbf5d ""
-  "writeup.aux" 1367477765 2094 f28854620fec34ac1afedcef6081008e ""
-  "writeup.bbl" 1367477764 918 39544439ab7b68c27306c13b2895d453 "bibtex writeup"
-  "writeup.tex" 1367477762 23616 415f6cbdeeb836de7aadea283df265ea ""
+  "unbounded/exp/plot/access_throughput.pdf" 1368086347 15714 2b51401e8b7584dfcbf3200f6ae6e63c ""
+  "unbounded/exp/plot/access_timing.pdf" 1368086255 15485 8367d6fd991d9b50fa936fd981d84bcb ""
+  "unbounded/exp/plot/comp_throughput_random.pdf" 1368087120 15542 e45eb38338199034c57d26ea47abb9d8 ""
+  "unbounded/exp/plot/comp_throughput_stack.pdf" 1368087116 15733 da25226b372b5de272d0b6aad34f6d5a ""
+  "unbounded/exp/plot/comp_timing_random.pdf" 1368086895 14756 984d460fd9ecd3fafd5ed3110b241b84 ""
+  "unbounded/exp/plot/comp_timing_stack.pdf" 1368086874 14911 f38e19016f2d5a6984f3aa0814294aa2 ""
+  "writeup.aux" 1368098540 3107 b4161e2e06b21ccdbba81a3e8b40b07d ""
+  "writeup.bbl" 1368097562 918 39544439ab7b68c27306c13b2895d453 "bibtex writeup"
+  "writeup.tex" 1368098539 32199 b46ca6f8fdb52509499f0622ccf5e594 ""
   (generated)
   "writeup.log"
   "writeup.pdf"

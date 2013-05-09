@@ -12,6 +12,7 @@ There are several entry points to see the algorithm at work.
 In either /herlihy or /unbounded, you can run any of the test programs. I would recommend test/stress; these are most up-to-date with my current deque spec in both cases, and are more general than test/serial or test/concurrent, which are unit tests.
 
 In /unbounded, you can also run exp/nonblock to see that the deque is working. Options for unbounded/exp/nonblock are as follows:
+
 * t: set the number of pthreads to use
 * e: choose which experiment to run ("timing" or "throughput")
 * w: choose which workflow to use ("stack", "queue", or "random")
@@ -51,3 +52,9 @@ In /unbounded, you can also run exp/nonblock to see that the deque is working. O
 
 ### Writeup Revisions ###
 There have been several revisions to the project report since last submission:
+
+* Minor revision to the abstract.
+* Description of unbounded algorithm changed.
+* Results section completely overhauled; new plots added.
+* Future work section added.
+* Pseudocode in final figure modified to reflect current algorithm.
